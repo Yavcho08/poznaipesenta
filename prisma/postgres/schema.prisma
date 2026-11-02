@@ -1,0 +1,239 @@
+// ГЕНЕРИРАН ФАЙЛ — не редактирай. Източник: prisma/schema.prisma (npm run db:pg:sync)
+// Схема на „Познай песента“.
+// Пише се така, че да работи и върху SQLite (разработка), и върху Postgres (продукция):
+// без скаларни списъци (String[]) — списъците са релации или Json.
+// Deezer ID-тата се пазят като String, защото надхвърлят int32 (Postgres integer).
+
+generator client {
+  provider = "prisma-client"
+  output   = "../../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum PlaylistSource {
+  curated
+  deezer
+  spotify
+}
+
+model Artist {
+  id        String   @id @default(cuid())
+  name      String
+  nameLatin String?
+  deezerId  String?  @unique
+  imageUrl  String?
+  isPopFolk Boolean  @default(false)
+  genres    Genre[]
+  tracks    Track[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Genre {
+  id      String   @id @default(cuid())
+  slug    String   @unique
+  name    String
+  artists Artist[]
+}
+
+model Track {
+  id          String          @id @default(cuid())
+  // Пазим само ID; preview URL-ът изтича и се взима свеж от Deezer при старт на рунд.
+  deezerId    String          @unique
+  isrc        String?
+  title       String
+  artistName  String
+  artistId    String?
+  artist      Artist?         @relation(fields: [artistId], references: [id], onDelete: SetNull)
+  albumCover  String?
+  releaseYear Int?
+  rank        Int             @default(0)
+  // looseKey(title) + looseKey(artistName) — търсене без значение от азбуката.
+  searchKey   String          @default("")
+  // Секундата в Deezer откъса, от която започват клиповете (припевът) — src/lib/audio/hook.ts.
+  // null = още не е изчислена (изчислява се при първото пускане).
+  hookStart   Float?
+  playlists   PlaylistTrack[]
+  rounds      Round[]
+  roomRounds  RoomRound[]
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+
+  @@index([isrc])
+  @@index([artistId])
+}
+
+model Playlist {
+  id          String          @id @default(cuid())
+  name        String
+  description String?
+  source      PlaylistSource
+  // ID на плейлиста в Deezer/Spotify; null за curated.
+  externalId  String?
+  // Секция на началния екран, напр. "pop-folk" за десетилетията в поп-фолка.
+  category    String?
+  sortOrder   Int             @default(0)
+  // Брой песни в източника (за „42/50 песни са готови за игра“).
+  sourceTotal Int?
+  tracks      PlaylistTrack[]
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+
+  @@unique([source, externalId])
+}
+
+model PlaylistTrack {
+  playlistId String
+  trackId    String
+  position   Int
+  playlist   Playlist @relation(fields: [playlistId], references: [id], onDelete: Cascade)
+  track      Track    @relation(fields: [trackId], references: [id], onDelete: Cascade)
+
+  @@id([playlistId, trackId])
+  @@index([playlistId, position])
+}
+
+model GameSession {
+  id            String    @id @default(cuid())
+  // Откъде е пулът: "artist" | "genre" | "playlist" | ... (уточнява се във Фаза 3).
+  sourceType    String?
+  sourceRef     String?
+  rounds        Round[]
+  score         Score?
+  // „Предизвикай приятел“: код за линка (не самото id — иначе приятелят би видял отговорите).
+  challengeCode String?   @unique
+  createdAt     DateTime  @default(now())
+  finishedAt    DateTime?
+}
+
+model Round {
+  id           String      @id @default(cuid())
+  sessionId    String
+  session      GameSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  // Пореден номер на рунда в играта (0–9).
+  index        Int
+  trackId      String
+  track        Track       @relation(fields: [trackId], references: [id])
+  // Индекс на стъпката (0–4 → 0.2/1/2/5/10 сек), на която е познато; null = не е познато.
+  solvedAtStep Int?
+  points       Int         @default(0)
+  // Опити: [{ step, kind: "guess" | "skip", title?, artist?, deezerId? }]
+  guesses      Json
+  createdAt    DateTime    @default(now())
+
+  @@unique([sessionId, index])
+}
+
+model Score {
+  id         String      @id @default(cuid())
+  sessionId  String      @unique
+  session    GameSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  playerName String?
+  total      Int
+  createdAt  DateTime    @default(now())
+
+  @@index([total])
+}
+
+// --- Мултиплейър (Фаза 5) ---
+// Времевата линия на рунда се изчислява от roundStartAt (виж src/lib/room/timeline.ts),
+// така че не са нужни фонови задачи: състоянието се придвижва при четене.
+
+model Room {
+  id           String         @id @default(cuid())
+  // 6 символа, без лесни за бъркане (0/O, 1/I).
+  code         String         @unique
+  // "lobby" | "playing" | "finished"
+  status       String         @default("lobby")
+  // JSON на GameSource
+  source       String
+  label        String
+  roundIndex   Int            @default(-1)
+  // Кога започва откъсът на стъпка 0 в текущия рунд.
+  roundStartAt DateTime?
+  // Ранен край (всички познаха); иначе краят се изчислява от времевата линия.
+  roundEndAt   DateTime?
+  hostId       String?
+  // Код на стаята-реванш (след края); останалите играчи влизат в нея с едно докосване.
+  nextCode     String?
+  players      RoomPlayer[]
+  rounds       RoomRound[]
+  guesses      RoomGuess[]
+  reactions    RoomReaction[]
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+}
+
+model RoomPlayer {
+  id         String         @id @default(cuid())
+  roomId     String
+  room       Room           @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  name       String
+  // Тайна на играча (пази се в localStorage); с нея се правят ходовете.
+  token      String         @unique
+  score      Int            @default(0)
+  lastSeenAt DateTime       @default(now())
+  guesses    RoomGuess[]
+  reactions  RoomReaction[]
+  joinedAt   DateTime       @default(now())
+
+  @@unique([roomId, name])
+}
+
+model RoomRound {
+  roomId  String
+  room    Room   @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  index   Int
+  trackId String
+  track   Track  @relation(fields: [trackId], references: [id])
+
+  @@id([roomId, index])
+}
+
+model RoomGuess {
+  id         String     @id @default(cuid())
+  roomId     String
+  room       Room       @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  playerId   String
+  player     RoomPlayer @relation(fields: [playerId], references: [id], onDelete: Cascade)
+  roundIndex Int
+  // Стъпката (0–4), на която е направен ходът — всеки играч си минава стъпките сам.
+  step       Int
+  // "guess" | "skip" (при skip deezerId/title/artist са празни)
+  kind       String     @default("guess")
+  deezerId   String
+  title      String
+  artist     String
+  correct    Boolean
+  points     Int
+  createdAt  DateTime   @default(now())
+
+  @@unique([playerId, roundIndex, step])
+  @@index([roomId, roundIndex])
+}
+
+// --- Дневно предизвикателство (Фаза 6) ---
+
+model DailyChallenge {
+  // YYYY-MM-DD по българско време
+  date      String   @id
+  // Подредени Track.id — едни и същи за всички играчи през деня.
+  trackIds  Json
+  createdAt DateTime @default(now())
+}
+
+// Емоджи реакции в стая. Пазят се само за кратко (старите се трият при нова реакция).
+model RoomReaction {
+  id        String     @id @default(cuid())
+  roomId    String
+  room      Room       @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  playerId  String
+  player    RoomPlayer @relation(fields: [playerId], references: [id], onDelete: Cascade)
+  emoji     String
+  createdAt DateTime   @default(now())
+
+  @@index([roomId, createdAt])
+}

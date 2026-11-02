@@ -1,0 +1,14 @@
+# Не се качват във Vercel
+node_modules
+.next
+.env
+.env.*
+!.env.example
+prisma/*.db
+prisma/*.db-journal
+src/generated
+.claude
+.agents
+.windsurf
+skills-lock.json
+*.png

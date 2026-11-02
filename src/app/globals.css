@@ -1,0 +1,184 @@
+@import "tailwindcss";
+
+/* Тъмна тема (единствената). */
+:root {
+  --background: #0d0817;
+  --foreground: #f6f2fc;
+  /* Полупрозрачни повърхности — фонът със сиянията прозира през тях. */
+  --surface: rgb(255 255 255 / 0.055);
+  --surface-strong: rgb(255 255 255 / 0.09);
+  --line: rgb(255 255 255 / 0.1);
+  --muted: #a99bc0;
+  --accent: #ff3d8b;
+  --accent-2: #a855f7;
+  --popup: #1d1430;
+  color-scheme: dark;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-surface: var(--surface);
+  --color-surface-strong: var(--surface-strong);
+  --color-line: var(--line);
+  --color-muted: var(--muted);
+  --color-accent: var(--accent);
+  --color-accent-2: var(--accent-2);
+  --color-popup: var(--popup);
+  --font-sans: var(--font-geist-sans);
+  --font-display: var(--font-unbounded);
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-geist-sans), system-ui, sans-serif;
+  /* Без сиво мигане при докосване на бутони (iOS/Android). */
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Меки цветни сияния зад съдържанието. */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    radial-gradient(40rem 30rem at 10% -10%, rgb(255 61 139 / 0.22), transparent 70%),
+    radial-gradient(36rem 30rem at 110% 20%, rgb(168 85 247 / 0.2), transparent 70%),
+    radial-gradient(40rem 30rem at 50% 120%, rgb(59 130 246 / 0.12), transparent 70%);
+}
+
+/* Поне 16px в полетата — иначе iOS увеличава страницата при фокус. */
+input,
+select,
+textarea {
+  font-size: max(16px, 1em);
+}
+
+button,
+a {
+  touch-action: manipulation;
+}
+
+/* Играта не е документ за четене: при цъкане/докосване върху текст да не се появява мигащ курсор
+   и текстът да не се маркира (особено при бързи докосвания на „Пропусни“ на телефон).
+   Курсор и маркиране остават само в полетата за писане. */
+body {
+  caret-color: transparent;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+
+input,
+textarea,
+select,
+[contenteditable="true"] {
+  caret-color: auto;
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+/* Tailwind 4 оставя стандартната стрелка над бутоните — показваме „ръчичка“ навсякъде, където се цъка. */
+button:not(:disabled),
+[role="button"],
+[role="tab"],
+[role="option"],
+[role="radio"],
+summary,
+label:has(input) {
+  cursor: pointer;
+}
+
+/* Падащият списък на <select> се рисува от браузъра (на Windows — бял фон) и наследява светлия
+   текст на сайта → не се вижда. Задаваме му тъмен фон изрично. */
+select {
+  color-scheme: dark;
+}
+
+select option,
+select optgroup {
+  background-color: var(--popup);
+  color: var(--foreground);
+}
+
+/* Tailwind 4: @utility (не @layer components), за да работят с модификатори и @apply помежду си. */
+@utility card {
+  @apply rounded-2xl border border-line bg-surface backdrop-blur-sm;
+}
+
+@utility btn {
+  @apply inline-flex items-center justify-center gap-2 rounded-full px-6 py-3 font-semibold transition active:scale-[0.97] disabled:pointer-events-none disabled:opacity-40;
+}
+
+@utility btn-primary {
+  @apply btn bg-gradient-to-r from-accent to-accent-2 text-white shadow-lg shadow-accent/25 hover:brightness-110;
+}
+
+@utility btn-ghost {
+  @apply btn border border-line bg-surface hover:bg-surface-strong;
+}
+
+@utility text-gradient {
+  @apply bg-gradient-to-r from-accent via-[#ff7ab6] to-accent-2 bg-clip-text text-transparent;
+}
+
+@utility field {
+  @apply w-full rounded-xl border border-line bg-surface px-4 py-3 text-foreground outline-none transition placeholder:text-muted focus:border-accent/60 focus:ring-2 focus:ring-accent/30;
+}
+
+@keyframes pulse-ring {
+  0% {
+    box-shadow: 0 0 0 0 rgb(255 61 139 / 0.5);
+  }
+  100% {
+    box-shadow: 0 0 0 18px rgb(255 61 139 / 0);
+  }
+}
+
+.animate-pulse-ring {
+  animation: pulse-ring 1.2s ease-out infinite;
+}
+
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.animate-rise {
+  animation: rise 0.35s ease-out both;
+}
+
+/* Емоджи реакциите в стаите изплуват нагоре и изчезват. */
+@keyframes float-up {
+  0% {
+    opacity: 0;
+    transform: translateY(0) scale(0.6);
+  }
+  15% {
+    opacity: 1;
+    transform: translateY(-20px) scale(1.1);
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-260px) scale(1);
+  }
+}
+
+.animate-float-up {
+  animation: float-up 2.5s ease-out forwards;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-float-up {
+    animation-duration: 0.01s;
+  }
+}
