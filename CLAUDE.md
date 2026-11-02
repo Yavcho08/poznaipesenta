@@ -56,6 +56,7 @@
 ## Продукция (Vercel)
 - https://poznai-pesenta.vercel.app — Vercel проект `poznai-pesenta` (yavcho08s-projects), Neon база `poznai-pesenta-db` (Франкфурт), свързана през Vercel Marketplace (`DATABASE_URL`, `DATABASE_URL_UNPOOLED`). `ADMIN_PASSWORD`, `SPOTIFY_CLIENT_ID` и `SPOTIFY_REDIRECT_URI` (`https://poznai-pesenta.vercel.app/api/spotify/callback`) са зададени във Vercel. Spotify приложението е в Development Mode: входът работи само за акаунти, добавени в Spotify Dashboard → User Management (до 5); всички песни — само от собствени/съвместни плейлисти, чуждите минават през embed (до 100).
 - Деплой: `npx vercel deploy --prod --yes` (build: `npm run vercel-build` от `vercel.json`).
+- Код: https://github.com/Yavcho08/poznaipesenta (публично, клон `main`, remote `origin`). Преди commit провери, че няма тайни — `.env*`, `.vercel`, базата и `.claude/settings.local.json` са в `.gitignore`. Vercel още **не** е свързан с хранилището (деплоят е ръчен).
 - Данни: каталогът се прави локално (seed/внос в SQLite) и се прехвърля с `scripts/copy-to-postgres.ts` (виж коментара в него). **Никога** `vercel env pull` в `.env.local` — Postgres адресът там би превключил локалната разработка към продукционната база; тегли в scratchpad.
 - На компютъра на потребителя Avast сканира HTTPS и новите връзки се отварят за ~12 сек., а Node `fetch` се отказва след 10 → Vercel CLI дава „fetch failed“. Пусни CLI с `NODE_OPTIONS=--import=<preload>`, който вдига `connect.timeout` на undici (`setGlobalDispatcher(new Agent({ connect: { timeout: 60_000 } }))`).
 
