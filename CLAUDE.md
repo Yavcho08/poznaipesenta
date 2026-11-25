@@ -66,7 +66,7 @@
 - Стаи: Supabase Realtime Broadcast (`src/lib/room/realtime.ts` → канал `room:<КОД>`, само сигнал „changed“); клиентът пита и на 2.5 сек. (1 сек. без Realtime).
 - `npm run db:check-rls` — RLS отвън (анонимен и влязъл); трябва „всичко е наред“. Supabase Security Advisor трябва да е без WARN.
 - Turbopack понякога държи стара версия на модул след добавен export („X is not a function“) → рестартирай dev сървъра.
-- Next.js 16.4.2 при `npm run dev`/`build` понякога спира с „security vulnerability … upgrade recommendation“ — второ пускане минава. Обновяване на Next още не е правено (потребителят да реши).
+- Next.js е 16.4.6 (16.4.2 имаше уязвимости и спираше dev/build със съобщение за обновяване).
 
 ## Продукция (Vercel)
 - Supabase: `poznai-pesenta-dev` (локалната разработка, `.env.local`) и `poznai-pesenta-prod` (още не е създаден/свързан). Ключовете и паролите са в `.env.local` (`SUPABASE_DEV_REF`, `SUPABASE_DEV_DB_PASSWORD`, `SUPABASE_ACCESS_TOKEN`). Management API: `https://api.supabase.com/v1/...` с `SUPABASE_ACCESS_TOKEN`.
