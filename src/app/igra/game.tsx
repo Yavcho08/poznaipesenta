@@ -10,6 +10,7 @@ import type { GameSource } from "@/lib/game/source";
 import Link from "next/link";
 import { ClipProgress } from "./clip-progress";
 import { Results } from "./results";
+import { UnlockToasts, type Unlock } from "@/components/unlock-toasts";
 
 type Phase = "intro" | "loading" | "playing" | "results" | "error";
 
@@ -20,6 +21,7 @@ const REVEAL_MIN_AFTER_HOOK_S = 15;
 
 interface GameResponse {
   game: GameView;
+  unlocked?: Unlock[];
 }
 
 async function api<T>(url: string, init?: RequestInit): Promise<T> {
@@ -88,6 +90,7 @@ export function Game({
   const [busy, setBusy] = useState(false);
   const [playback, setPlayback] = useState<Playback | null>(null);
   const [audioError, setAudioError] = useState<string | null>(null);
+  const [unlocked, setUnlocked] = useState<Unlock[]>([]);
 
   const player = useCallback((): ClipPlayer => (playerRef.current ??= new ClipPlayer()), []);
   const setVolume = useCallback((volume: number) => player().setVolume(volume), [player]);
@@ -224,6 +227,7 @@ export function Game({
       });
       setGame(data.game);
       setSelected(null);
+      if (data.unlocked?.length) setUnlocked((u) => [...u, ...(data.unlocked ?? [])]);
       const updated = data.game.rounds[viewIndex];
       if (body.kind === "guess") {
         if (updated.solvedAtStep !== null) {
@@ -326,13 +330,16 @@ export function Game({
 
   if (phase === "results" && game) {
     return (
-      <Results
+      <>
+        <UnlockToasts items={unlocked} />
+        <Results
         game={game}
         // Дневното и предизвикателството са с едни и същи песни — „Нова игра“ би ги повторила.
         onRestart={daily || challenge ? undefined : start}
         shareDate={daily?.date}
         challengeCode={challenge?.code}
-      />
+        />
+      </>
     );
   }
 
@@ -342,6 +349,7 @@ export function Game({
 
   return (
     <div className="space-y-5">
+      <UnlockToasts items={unlocked} />
       <div className="flex items-center justify-between gap-3">
         <span className="truncate rounded-full border border-line bg-surface px-3 py-1 text-xs text-muted">{game.label}</span>
         <span className="shrink-0 rounded-full bg-gradient-to-r from-accent/25 to-accent-2/25 px-3 py-1 text-sm">

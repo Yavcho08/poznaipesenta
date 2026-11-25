@@ -3,6 +3,7 @@ import { Suspense } from "react";
 import { connection } from "next/server";
 import { Avatar } from "@/components/avatar";
 import { getViewer } from "@/lib/auth/viewer";
+import { levelFromXp } from "@/lib/achievements/progress";
 
 async function Chip() {
   await connection();
@@ -17,7 +18,15 @@ async function Chip() {
   const name = viewer.profile.username ?? "Профил";
   return (
     <Link href="/profil" className="flex shrink-0 items-center gap-2 rounded-full py-1 pl-1 pr-1 hover:bg-surface-strong sm:pr-3" title={name}>
-      <Avatar value={viewer.profile.avatarUrl} name={viewer.profile.username ?? viewer.email} size={30} />
+      <span className="relative">
+        <Avatar value={viewer.profile.avatarUrl} name={viewer.profile.username ?? viewer.email} size={30} />
+        <span
+          className="absolute -bottom-1 -right-1.5 rounded-full bg-gradient-to-r from-accent to-accent-2 px-1 text-[9px] font-bold leading-4 text-white ring-2 ring-background"
+          title="Ниво"
+        >
+          {levelFromXp(viewer.profile.xp)}
+        </span>
+      </span>
       <span className="hidden max-w-28 truncate text-sm font-semibold sm:inline">{name}</span>
     </Link>
   );

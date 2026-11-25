@@ -1,4 +1,5 @@
 import "server-only";
+import { evaluateAchievements } from "@/lib/achievements/server";
 import { randomBytes, randomInt } from "node:crypto";
 import { getTrack } from "@/lib/deezer";
 import { LAST_STEP, pointsForStep, ROUNDS_PER_GAME, type Answer } from "@/lib/game/rules";
@@ -142,7 +143,15 @@ async function advance(room: Room): Promise<Room> {
 
   const total = await prisma.roomRound.count({ where: { roomId: room.id } });
   if (room.roundIndex + 1 >= total) {
-    await prisma.room.updateMany({ where: { id: room.id, roundIndex: room.roundIndex, status: "playing" }, data: { status: "finished" } });
+    const { count } = await prisma.room.updateMany({
+      where: { id: room.id, roundIndex: room.roundIndex, status: "playing" },
+      data: { status: "finished" },
+    });
+    // Само заявката, която е приключила стаята: постижения за влезлите играчи (стаи, победа).
+    if (count > 0) {
+      const users = await prisma.roomPlayer.findMany({ where: { roomId: room.id, userId: { not: null } }, select: { userId: true } });
+      await Promise.all(users.map((u) => evaluateAchievements({ userId: u.userId as string }).catch(() => [])));
+    }
   } else {
     const nextStart = Math.max(end + REVEAL_S * 1000, now + MIN_LEAD_MS);
     await prisma.room.updateMany({

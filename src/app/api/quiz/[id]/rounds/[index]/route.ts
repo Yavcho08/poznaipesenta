@@ -1,5 +1,6 @@
 import type { NextRequest } from "next/server";
 import { answerQuiz, parseQuizInput } from "@/lib/engine/server";
+import { afterGameFinished } from "@/lib/achievements/server";
 import { handle, parseRoundIndex } from "@/lib/game/http";
 import { GameError } from "@/lib/game/server";
 import { clientIp, rateLimit, tooManyRequests } from "@/lib/rate-limit";
@@ -14,6 +15,8 @@ export async function POST(req: NextRequest, ctx: RouteContext<"/api/quiz/[id]/r
     if (!input) throw new GameError("Невалиден отговор");
     const elapsed =
       typeof body === "object" && body !== null && "elapsedMs" in body && typeof body.elapsedMs === "number" ? body.elapsedMs : undefined;
-    return Response.json(await answerQuiz(id, parseRoundIndex(index), input, elapsed));
+    const result = await answerQuiz(id, parseRoundIndex(index), input, elapsed);
+    const unlocked = result.quiz.finished ? await afterGameFinished(id) : [];
+    return Response.json({ ...result, unlocked });
   });
 }

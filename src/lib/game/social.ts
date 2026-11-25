@@ -191,3 +191,48 @@ export async function createChallengeGame(code: string, owner: Owner): Promise<s
 export function isChallengeCode(value: string): boolean {
   return /^[a-z0-9]{8}$/.test(value);
 }
+
+// --- Класации по XP и по артист ---
+
+export interface XpEntry {
+  rank: number;
+  name: string;
+  xp: number;
+}
+
+/** Общата класация: всички профили с име по XP (кеширано в profiles.xp след всяка игра). */
+export async function getXpBoard(limit = 50): Promise<XpEntry[]> {
+  const rows = await prisma.profile.findMany({
+    where: { username: { not: null }, xp: { gt: 0 } },
+    orderBy: [{ xp: "desc" }, { createdAt: "asc" }],
+    take: limit,
+    select: { username: true, xp: true },
+  });
+  return rows.map((r, i) => ({ rank: i + 1, name: r.username ?? "", xp: r.xp }));
+}
+
+export interface ArtistEntry {
+  rank: number;
+  name: string;
+  solved: number;
+  played: number;
+  /** 0–100 */
+  accuracy: number;
+}
+
+/** Кой познава най-добре артиста: познати песни в „Познай песента“ (поне 5 изиграни). */
+export async function getArtistBoard(artistId: string, limit = 50): Promise<ArtistEntry[]> {
+  const rows = await prisma.$queryRaw<{ name: string; solved: number; played: number }[]>`
+    SELECT p.username AS name,
+           count(*) FILTER (WHERE gr.solved_step IS NOT NULL)::int AS solved,
+           count(*)::int AS played
+    FROM game_rounds gr
+    JOIN games g ON g.id = gr.game_id
+    JOIN profiles p ON p.id = g.user_id
+    WHERE g.game_type = 'listen' AND gr.artist_id = ${artistId} AND gr.finished_at IS NOT NULL AND p.username IS NOT NULL
+    GROUP BY p.username
+    HAVING count(*) >= 5
+    ORDER BY solved DESC, played ASC
+    LIMIT ${limit}`;
+  return rows.map((r, i) => ({ ...r, rank: i + 1, accuracy: r.played ? Math.round((r.solved / r.played) * 100) : 0 }));
+}

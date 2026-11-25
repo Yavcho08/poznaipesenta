@@ -3,6 +3,7 @@ import { clientIp, rateLimit, tooManyRequests } from "@/lib/rate-limit";
 import { isDeezerId } from "@/lib/deezer";
 import { handle, parseRoundIndex } from "@/lib/game/http";
 import { GameError, playMove, type Move } from "@/lib/game/server";
+import { afterGameFinished } from "@/lib/achievements/server";
 
 function parseMove(body: unknown): Move {
   if (typeof body === "object" && body !== null && "kind" in body) {
@@ -24,6 +25,7 @@ export async function POST(req: NextRequest, ctx: RouteContext<"/api/game/[id]/r
     const { id, index } = await ctx.params;
     const move = parseMove(await req.json().catch(() => null));
     const game = await playMove(id, parseRoundIndex(index), move);
-    return Response.json({ game });
+    const unlocked = game.finished ? await afterGameFinished(id) : [];
+    return Response.json({ game, unlocked });
   });
 }

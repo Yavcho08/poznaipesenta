@@ -6,6 +6,9 @@ import { getViewer } from "@/lib/auth/viewer";
 import { prisma } from "@/lib/prisma";
 import { signOutAction } from "@/app/vhod/actions";
 import { AvatarPicker, DeleteAccount, UsernameForm } from "./forms";
+import { achievementProgress, evaluateAchievements, getLevel, getStreak } from "@/lib/achievements/server";
+import { AchievementGrid, LevelBar, StreakBadge } from "@/components/progress-ui";
+import Link from "next/link";
 
 export const metadata = { title: "Профил · Познай песента" };
 
@@ -14,7 +17,13 @@ async function Profile() {
   const viewer = await getViewer();
   if (!viewer) redirect("/vhod?next=/profil");
   const { profile } = viewer;
-  const [games, best] = await Promise.all([
+  const owner = { userId: viewer.userId };
+  // Догонва прогреса (напр. след прехвърляне от гост или игра в стая).
+  await evaluateAchievements(owner).catch(() => []);
+  const [level, streak, achievements, games, best] = await Promise.all([
+    getLevel(owner),
+    getStreak(owner),
+    achievementProgress(owner),
     prisma.game.count({ where: { userId: viewer.userId, finishedAt: { not: null } } }),
     prisma.game.aggregate({ where: { userId: viewer.userId, finishedAt: { not: null } }, _max: { total: true }, _sum: { total: true } }),
   ]);
@@ -30,6 +39,12 @@ async function Profile() {
         </div>
       </header>
 
+      <section className="card p-4">
+        <LevelBar info={level} />
+      </section>
+
+      <StreakBadge streak={streak} />
+
       <section className="grid grid-cols-3 gap-3 text-center">
         <Stat label="Игри" value={games} />
         <Stat label="Точки общо" value={best._sum.total ?? 0} />
@@ -41,6 +56,15 @@ async function Profile() {
           Избери си име — с него влизаш в класациите и в стаите с приятели.
         </p>
       )}
+
+      <Link href="/statistiki" className="btn-ghost w-full">
+        📊 Моите статистики
+      </Link>
+
+      <section className="space-y-3">
+        <h2 className="font-display text-xl font-bold">Постижения</h2>
+        <AchievementGrid items={achievements} />
+      </section>
 
       <section className="card space-y-3 p-4">
         <h2 className="font-semibold">Име в играта</h2>
