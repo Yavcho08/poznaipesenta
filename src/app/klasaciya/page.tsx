@@ -46,14 +46,23 @@ function Rank({ rank }: { rank: number }) {
   return <span className="w-8 text-center text-lg">{MEDALS[rank - 1] ?? <span className="text-sm text-muted">{rank}</span>}</span>;
 }
 
-function Table({ entries, empty }: { entries: RankedEntry[]; empty: string }) {
+function PlayerName({ name, link = true }: { name: string; link?: boolean }) {
+  if (!link) return <span className="min-w-0 flex-1 truncate font-semibold">{name}</span>;
+  return (
+    <Link href={`/igrach/${encodeURIComponent(name)}`} className="min-w-0 flex-1 truncate font-semibold hover:underline">
+      {name}
+    </Link>
+  );
+}
+
+function Table({ entries, empty, link = true }: { entries: RankedEntry[]; empty: string; link?: boolean }) {
   if (entries.length === 0) return <p className="card p-6 text-center text-sm text-muted">{empty}</p>;
   return (
     <ol className="card divide-y divide-line">
       {entries.map((e) => (
         <li key={`${e.name}-${e.at}`} className="flex items-center gap-3 px-4 py-2.5">
           <Rank rank={e.rank} />
-          <span className="min-w-0 flex-1 truncate font-semibold">{e.name}</span>
+          <PlayerName name={e.name} link={link} />
           <span className="font-display text-lg font-bold">{e.total}</span>
         </li>
       ))}
@@ -99,7 +108,7 @@ async function Boards({ searchParams }: { searchParams: PageProps<"/klasaciya">[
       {tab === "arhiv" && (
         <>
           <p className="text-sm text-muted">Резултатите по име отпреди профилите (най-добрият на име).</p>
-          <Table entries={await getLeaderboard({ kind: "archive" }, 50)} empty="Няма стари резултати." />
+          <Table entries={await getLeaderboard({ kind: "archive" }, 50)} empty="Няма стари резултати." link={false} />
         </>
       )}
     </div>
@@ -142,7 +151,7 @@ async function XpBoard() {
         {entries.map((e) => (
           <li key={e.name} className="flex items-center gap-3 px-4 py-2.5">
             <Rank rank={e.rank} />
-            <span className="min-w-0 flex-1 truncate font-semibold">{e.name}</span>
+            <PlayerName name={e.name} />
             <span className="rounded-full bg-surface-strong px-2 py-0.5 text-xs">ниво {levelFromXp(e.xp)}</span>
             <span className="w-20 text-right font-display font-bold">{e.xp.toLocaleString("bg-BG")}</span>
           </li>

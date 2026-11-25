@@ -53,6 +53,7 @@ export default function HomePage({ searchParams }: PageProps<"/">) {
             <ModeCard key={t} href={`/igri/${t}`} icon={QUIZZES[t].icon} title={QUIZZES[t].title} text={QUIZZES[t].short} />
           ))}
           <ModeCard href="/vnos" icon="➕" title="Твой плейлист" text="От Deezer или Spotify" />
+          <ModeCard href="/statistiki" icon="📊" title="Моите статистики" text="Колко % познаваш всеки артист" />
         </ul>
       </section>
 
