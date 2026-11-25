@@ -52,18 +52,23 @@ function shuffle<T>(items: T[], random: () => number): T[] {
   return a;
 }
 
+/** Само песни, които могат да се пуснат (is_active) и не са на скрит артист. */
+const PLAYABLE = { isActive: true, NOT: { artist: { isActive: false } } } satisfies Prisma.TrackWhereInput;
+
 /** Всички песни от избрания източник. */
 export async function getPool(source: GameSource): Promise<Track[]> {
   switch (source.type) {
     case "popfolk":
-      return prisma.track.findMany({ where: { artist: { isPopFolk: true } } });
+      return prisma.track.findMany({ where: { ...PLAYABLE, artist: { isPopFolk: true, isActive: true } } });
     case "genre":
-      return prisma.track.findMany({ where: { artist: { genres: { some: { slug: source.slug } } } } });
+      return prisma.track.findMany({
+        where: { ...PLAYABLE, artist: { isActive: true, genres: { some: { genre: { slug: source.slug } } } } },
+      });
     case "artists":
-      return prisma.track.findMany({ where: { artistId: { in: source.ids } } });
+      return prisma.track.findMany({ where: { ...PLAYABLE, artistId: { in: source.ids } } });
     case "playlist":
       return (
-        await prisma.playlistTrack.findMany({ where: { playlistId: source.id }, include: { track: true } })
+        await prisma.playlistTrack.findMany({ where: { playlistId: source.id, track: PLAYABLE }, include: { track: true } })
       ).map((pt) => pt.track);
   }
 }
@@ -125,16 +130,23 @@ export async function createGame(source: GameSource): Promise<string> {
   return createSession({ sourceType: source.type, sourceRef: JSON.stringify(source) }, picked);
 }
 
+/** daily/challenge са отделни режими; всичко останало е свободна игра. */
+function modeOf(sourceType: string): "free" | "daily" | "challenge" {
+  return sourceType === "daily" || sourceType === "challenge" ? sourceType : "free";
+}
+
 export async function createSession(meta: { sourceType: string; sourceRef: string }, tracks: Track[]): Promise<string> {
-  const session = await prisma.gameSession.create({
+  const game = await prisma.game.create({
     data: {
       ...meta,
+      gameType: "listen",
+      mode: modeOf(meta.sourceType),
       rounds: {
-        create: tracks.map((track, index) => ({ index, trackId: track.id, guesses: [] })),
+        create: tracks.map((track, index) => ({ index, trackId: track.id, artistId: track.artistId, attempts: [] })),
       },
     },
   });
-  return session.id;
+  return game.id;
 }
 
 // --- Състояние ---
@@ -149,20 +161,20 @@ function toAnswer(track: Track): Answer {
 
 const sessionInclude = { rounds: { include: { track: true }, orderBy: { index: "asc" } } } as const;
 
-type SessionWithRounds = Prisma.GameSessionGetPayload<{ include: typeof sessionInclude }>;
+type SessionWithRounds = Prisma.GameGetPayload<{ include: typeof sessionInclude }>;
 
 function toView(session: SessionWithRounds, label: string): GameView {
   const rounds: RoundView[] = session.rounds.map((round) => {
-    const guesses = parseGuesses(round.guesses);
+    const guesses = parseGuesses(round.attempts);
     const done = isRoundDone(guesses);
     return {
       index: round.index,
       step: done ? guesses.length - 1 : guesses.length,
       done,
-      solvedAtStep: round.solvedAtStep,
+      solvedAtStep: round.solvedStep,
       points: round.points,
       guesses,
-      answer: done ? toAnswer(round.track) : null,
+      answer: done && round.track ? toAnswer(round.track) : null,
     };
   });
   const current = rounds.find((r) => !r.done);
@@ -177,7 +189,7 @@ function toView(session: SessionWithRounds, label: string): GameView {
 }
 
 export async function getGame(sessionId: string): Promise<GameView> {
-  const session = await prisma.gameSession.findUnique({ where: { id: sessionId }, include: sessionInclude });
+  const session = await prisma.game.findUnique({ where: { id: sessionId }, include: sessionInclude });
   if (!session) throw new GameError("Играта не е намерена", 404);
   return toView(session, await sessionLabel(session.sourceType, session.sourceRef));
 }
@@ -187,8 +199,8 @@ async function sessionLabel(sourceType: string | null, sourceRef: string | null)
   if (sourceType === "daily") return `Дневно предизвикателство · ${formatDate(sourceRef)}`;
   if (sourceType === "challenge") {
     // sourceRef = кодът на предизвикателството; името е на този, който предизвиква.
-    const original = await prisma.gameSession.findUnique({ where: { challengeCode: sourceRef }, include: { score: true } });
-    const name = original?.score?.playerName ?? "приятел";
+    const original = await prisma.game.findUnique({ where: { challengeCode: sourceRef } });
+    const name = original?.playerName ?? "приятел";
     const base = original && original.sourceType !== "challenge" ? await sessionLabel(original.sourceType, original.sourceRef) : "";
     return base ? `Предизвикателство от ${name} · ${base}` : `Предизвикателство от ${name}`;
   }
@@ -201,17 +213,20 @@ async function sessionLabel(sourceType: string | null, sourceRef: string | null)
 }
 
 export async function getRoundTrack(sessionId: string, index: number): Promise<Track> {
-  const round = await prisma.round.findUnique({
-    where: { sessionId_index: { sessionId, index } },
+  const round = await prisma.gameRound.findUnique({
+    where: { gameId_index: { gameId: sessionId, index } },
     include: { track: true },
   });
-  if (!round) throw new GameError("Рундът не е намерен", 404);
+  if (!round?.track) throw new GameError("Рундът не е намерен", 404);
   return round.track;
 }
 
 // --- Ход ---
 
-export type Move = { kind: "skip" } | { kind: "guess"; deezerId: string };
+/** elapsedMs — от първия клип на рунда до хода (по часовника на клиента; само за статистика). */
+export type Move = ({ kind: "skip" } | { kind: "guess"; deezerId: string }) & { elapsedMs?: number };
+
+const MAX_ANSWER_MS = 10 * 60 * 1000;
 
 /** Песента, която играчът е избрал: първо от базата, иначе от Deezer. */
 async function resolveGuess(deezerId: string): Promise<{ title: string; artist: string }> {
@@ -224,13 +239,13 @@ async function resolveGuess(deezerId: string): Promise<{ title: string; artist: 
 }
 
 export async function playMove(sessionId: string, index: number, move: Move): Promise<GameView> {
-  const round = await prisma.round.findUnique({
-    where: { sessionId_index: { sessionId, index } },
+  const round = await prisma.gameRound.findUnique({
+    where: { gameId_index: { gameId: sessionId, index } },
     include: { track: true },
   });
-  if (!round) throw new GameError("Рундът не е намерен", 404);
+  if (!round?.track) throw new GameError("Рундът не е намерен", 404);
 
-  const guesses = parseGuesses(round.guesses);
+  const guesses = parseGuesses(round.attempts);
   if (isRoundDone(guesses)) throw new GameError("Рундът вече е приключил", 409);
 
   const step = guesses.length;
@@ -245,12 +260,17 @@ export async function playMove(sessionId: string, index: number, move: Move): Pr
 
   const all = [...guesses, next];
   const solved = next.kind === "guess" && next.correct;
-  await prisma.round.update({
+  const now = new Date();
+  const elapsed = move.elapsedMs === undefined ? undefined : Math.min(Math.max(0, Math.round(move.elapsedMs)), MAX_ANSWER_MS);
+  const startedAt = round.startedAt ?? new Date(now.getTime() - (elapsed ?? 0));
+  await prisma.gameRound.update({
     where: { id: round.id },
     data: {
-      guesses: all,
-      solvedAtStep: solved ? step : null,
+      attempts: all,
+      solvedStep: solved ? step : null,
       points: solved ? pointsForStep(step) : 0,
+      startedAt,
+      ...(isRoundDone(all) && { finishedAt: now, answerMs: elapsed ?? now.getTime() - startedAt.getTime() }),
     },
   });
 
@@ -260,8 +280,5 @@ export async function playMove(sessionId: string, index: number, move: Move): Pr
 }
 
 async function finishGame(sessionId: string, total: number): Promise<void> {
-  await prisma.$transaction([
-    prisma.gameSession.updateMany({ where: { id: sessionId, finishedAt: null }, data: { finishedAt: new Date() } }),
-    prisma.score.upsert({ where: { sessionId }, update: { total }, create: { sessionId, total } }),
-  ]);
+  await prisma.game.updateMany({ where: { id: sessionId, finishedAt: null }, data: { finishedAt: new Date(), total } });
 }

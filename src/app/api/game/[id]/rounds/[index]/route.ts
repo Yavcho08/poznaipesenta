@@ -5,9 +5,12 @@ import { GameError, playMove, type Move } from "@/lib/game/server";
 
 function parseMove(body: unknown): Move {
   if (typeof body === "object" && body !== null && "kind" in body) {
-    if (body.kind === "skip") return { kind: "skip" };
+    // Само за статистиката „време за отговор“ — не влияе на точките.
+    const elapsedMs =
+      "elapsedMs" in body && typeof body.elapsedMs === "number" && Number.isFinite(body.elapsedMs) ? body.elapsedMs : undefined;
+    if (body.kind === "skip") return { kind: "skip", elapsedMs };
     if (body.kind === "guess" && "deezerId" in body && typeof body.deezerId === "string" && isDeezerId(body.deezerId)) {
-      return { kind: "guess", deezerId: body.deezerId };
+      return { kind: "guess", deezerId: body.deezerId, elapsedMs };
     }
   }
   throw new GameError("Невалиден ход");

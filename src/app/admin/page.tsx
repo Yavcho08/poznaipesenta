@@ -92,7 +92,7 @@ async function Dashboard() {
               <form action={setArtistGenresAction.bind(null, a.id)} className="flex flex-wrap items-center gap-3 pl-12 text-xs">
                 {genres.map((g) => (
                   <label key={g.id} className="flex items-center gap-1">
-                    <input type="checkbox" name="genre" value={g.slug} defaultChecked={a.genres.some((x) => x.id === g.id)} />
+                    <input type="checkbox" name="genre" value={g.slug} defaultChecked={a.genres.some((x) => x.genreId === g.id)} />
                     {g.name}
                   </label>
                 ))}

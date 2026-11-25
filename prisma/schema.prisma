@@ -1,7 +1,9 @@
-// Схема на „Познай песента“.
-// Пише се така, че да работи и върху SQLite (разработка), и върху Postgres (продукция):
-// без скаларни списъци (String[]) — списъците са релации или Json.
-// Deezer ID-тата се пазят като String, защото надхвърлят int32 (Postgres integer).
+// Схема на „Познай песента“ — САМО за типовете на Prisma Client.
+//
+// Източникът на истината са SQL миграциите в supabase/migrations/ (там са и RLS политиките,
+// тригерите и връзката с auth.users). При промяна: нова миграция там → `npm run db:push` →
+// обнови моделите тук → `npm run db:check` (сравнява тази схема с базата).
+// Никога `prisma migrate` — миграциите не са на Prisma.
 
 generator client {
   provider = "prisma-client"
@@ -9,140 +11,302 @@ generator client {
 }
 
 datasource db {
-  provider = "sqlite"
+  provider = "postgresql"
 }
 
 enum PlaylistSource {
   curated
   deezer
   spotify
+
+  @@map("playlist_source")
 }
 
+// --- Каталог ---
+
 model Artist {
-  id        String   @id @default(cuid())
-  name      String
-  nameLatin String?
-  deezerId  String?  @unique
-  imageUrl  String?
-  isPopFolk Boolean  @default(false)
-  genres    Genre[]
-  tracks    Track[]
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id           String        @id @default(dbgenerated("(gen_random_uuid())::text"))
+  deezerId     String?       @unique @map("deezer_id")
+  name         String
+  nameLatin    String?       @map("name_latin")
+  imageUrl     String?       @map("image_url")
+  isPopFolk    Boolean       @default(false) @map("is_pop_folk")
+  isActive     Boolean       @default(true) @map("is_active")
+  createdAt    DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt    DateTime      @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  genres       ArtistGenre[]
+  tracks       Track[]
+  albums       Album[]
+  trackArtists TrackArtist[]
+  gameRounds   GameRound[]
+
+  @@map("artists")
 }
 
 model Genre {
-  id      String   @id @default(cuid())
-  slug    String   @unique
+  id      String        @id @default(dbgenerated("(gen_random_uuid())::text"))
+  slug    String        @unique
   name    String
-  artists Artist[]
+  artists ArtistGenre[]
+
+  @@map("genres")
+}
+
+model ArtistGenre {
+  artistId String @map("artist_id")
+  genreId  String @map("genre_id")
+  artist   Artist @relation(fields: [artistId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  genre    Genre  @relation(fields: [genreId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@id([artistId, genreId])
+  @@index([genreId], map: "artist_genres_genre_idx")
+  @@map("artist_genres")
+}
+
+model Album {
+  id           String      @id @default(dbgenerated("(gen_random_uuid())::text"))
+  deezerId     String      @unique @map("deezer_id")
+  artistId     String?     @map("artist_id")
+  artist       Artist?     @relation(fields: [artistId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  title        String
+  coverUrl     String?     @map("cover_url")
+  releaseDate  DateTime?   @map("release_date") @db.Date
+  recordType   String?     @map("record_type")
+  dateVerified Boolean     @default(false) @map("date_verified")
+  createdAt    DateTime    @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt    DateTime    @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  tracks       Track[]
+  gameRounds   GameRound[]
+
+  @@index([artistId], map: "albums_artist_idx")
+  @@map("albums")
 }
 
 model Track {
-  id          String          @id @default(cuid())
+  id                String          @id @default(dbgenerated("(gen_random_uuid())::text"))
   // Пазим само ID; preview URL-ът изтича и се взима свеж от Deezer при старт на рунд.
-  deezerId    String          @unique
-  isrc        String?
-  title       String
-  artistName  String
-  artistId    String?
-  artist      Artist?         @relation(fields: [artistId], references: [id], onDelete: SetNull)
-  albumCover  String?
-  releaseYear Int?
-  rank        Int             @default(0)
+  deezerId          String          @unique @map("deezer_id")
+  isrc              String?
+  title             String
+  artistName        String          @map("artist_name")
+  artistId          String?         @map("artist_id")
+  artist            Artist?         @relation(fields: [artistId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  albumId           String?         @map("album_id")
+  album             Album?          @relation(fields: [albumId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  albumCover        String?         @map("album_cover")
+  releaseDate       DateTime?       @map("release_date") @db.Date
+  // Най-ранната известна година (албум, ISRC, други версии) — src/lib/catalog/year.ts
+  releaseYear       Int?            @map("release_year")
+  rank              Int             @default(0)
+  duration          Int?
   // looseKey(title) + looseKey(artistName) — търсене без значение от азбуката.
-  searchKey   String          @default("")
+  searchKey         String          @default("") @map("search_key")
   // Секундата в Deezer откъса, от която започват клиповете (припевът) — src/lib/audio/hook.ts.
-  // null = още не е изчислена (изчислява се при първото пускане).
-  hookStart   Float?
-  playlists   PlaylistTrack[]
-  rounds      Round[]
-  roomRounds  RoomRound[]
-  createdAt   DateTime        @default(now())
-  updatedAt   DateTime        @updatedAt
+  hookStart         Float?          @map("hook_start")
+  isActive          Boolean         @default(true) @map("is_active")
+  // no_preview | hidden | duplicate
+  deactivatedReason String?         @map("deactivated_reason")
+  createdAt         DateTime        @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt         DateTime        @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  artists           TrackArtist[]
+  playlists         PlaylistTrack[]
+  rounds            GameRound[]
+  roomRounds        RoomRound[]
 
-  @@index([isrc])
-  @@index([artistId])
+  @@index([isrc], map: "tracks_isrc_idx")
+  @@index([artistId], map: "tracks_artist_idx")
+  @@index([albumId], map: "tracks_album_idx")
+  @@index([createdAt(sort: Desc)], map: "tracks_created_idx")
+  @@map("tracks")
+}
+
+model TrackArtist {
+  trackId        String  @map("track_id")
+  deezerArtistId String  @map("deezer_artist_id")
+  artistId       String? @map("artist_id")
+  name           String
+  // main | featured
+  role           String  @default("main")
+  position       Int     @default(0)
+  track          Track   @relation(fields: [trackId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  artist         Artist? @relation(fields: [artistId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+
+  @@id([trackId, deezerArtistId])
+  @@index([artistId], map: "track_artists_artist_idx")
+  @@map("track_artists")
 }
 
 model Playlist {
-  id          String          @id @default(cuid())
+  id          String          @id @default(dbgenerated("(gen_random_uuid())::text"))
   name        String
   description String?
   source      PlaylistSource
   // ID на плейлиста в Deezer/Spotify; null за curated.
-  externalId  String?
+  externalId  String?         @map("external_id")
   // Секция на началния екран, напр. "pop-folk" за десетилетията в поп-фолка.
   category    String?
-  sortOrder   Int             @default(0)
+  sortOrder   Int             @default(0) @map("sort_order")
   // Брой песни в източника (за „42/50 песни са готови за игра“).
-  sourceTotal Int?
+  sourceTotal Int?            @map("source_total")
+  ownerId     String?         @map("owner_id") @db.Uuid
+  createdAt   DateTime        @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime        @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
   tracks      PlaylistTrack[]
-  createdAt   DateTime        @default(now())
-  updatedAt   DateTime        @updatedAt
 
   @@unique([source, externalId])
+  @@map("playlists")
 }
 
 model PlaylistTrack {
-  playlistId String
-  trackId    String
+  playlistId String   @map("playlist_id")
+  trackId    String   @map("track_id")
   position   Int
-  playlist   Playlist @relation(fields: [playlistId], references: [id], onDelete: Cascade)
-  track      Track    @relation(fields: [trackId], references: [id], onDelete: Cascade)
+  playlist   Playlist @relation(fields: [playlistId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  track      Track    @relation(fields: [trackId], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@id([playlistId, trackId])
-  @@index([playlistId, position])
+  @@index([playlistId, position], map: "playlist_tracks_order_idx")
+  @@index([trackId], map: "playlist_tracks_track_idx")
+  @@map("playlist_tracks")
 }
 
-model GameSession {
-  id            String    @id @default(cuid())
-  // Откъде е пулът: "artist" | "genre" | "playlist" | ... (уточнява се във Фаза 3).
-  sourceType    String?
-  sourceRef     String?
-  rounds        Round[]
-  score         Score?
+// --- Играчи и игри ---
+
+model Profile {
+  // = auth.users.id (FK е в SQL миграцията)
+  id           String            @id @db.Uuid
+  username     String?
+  avatarUrl    String?           @map("avatar_url")
+  // user | admin
+  role         String            @default("user")
+  xp           Int               @default(0)
+  createdAt    DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt    DateTime          @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  games        Game[]
+  achievements UserAchievement[]
+  mergedGuests Guest[]
+  roomPlayers  RoomPlayer[]
+
+  @@map("profiles")
+}
+
+model Guest {
+  id           String            @id @db.Uuid
+  mergedInto   String?           @map("merged_into") @db.Uuid
+  profile      Profile?          @relation(fields: [mergedInto], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  createdAt    DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
+  lastSeenAt   DateTime          @default(now()) @map("last_seen_at") @db.Timestamptz(6)
+  games        Game[]
+  achievements UserAchievement[]
+
+  @@map("guests")
+}
+
+model Game {
+  id            String      @id @default(dbgenerated("(gen_random_uuid())::text"))
+  userId        String?     @map("user_id") @db.Uuid
+  user          Profile?    @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  guestId       String?     @map("guest_id") @db.Uuid
+  guest         Guest?      @relation(fields: [guestId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  // listen | cover | newer | higher | year | order | album | singer | word
+  gameType      String      @default("listen") @map("game_type")
+  // free | daily | challenge
+  mode          String      @default("free")
+  // popfolk | genre | artists | playlist | daily | challenge
+  sourceType    String?     @map("source_type")
+  // JSON на източника (free), дата (daily) или код (challenge)
+  sourceRef     String?     @map("source_ref")
+  playerName    String?     @map("player_name")
+  total         Int         @default(0)
   // „Предизвикай приятел“: код за линка (не самото id — иначе приятелят би видял отговорите).
-  challengeCode String?   @unique
-  createdAt     DateTime  @default(now())
-  finishedAt    DateTime?
+  challengeCode String?     @unique @map("challenge_code")
+  createdAt     DateTime    @default(now()) @map("created_at") @db.Timestamptz(6)
+  finishedAt    DateTime?   @map("finished_at") @db.Timestamptz(6)
+  rounds        GameRound[]
+
+  @@index([userId, finishedAt], map: "games_user_idx")
+  @@index([guestId], map: "games_guest_idx")
+  @@index([finishedAt], map: "games_finished_idx")
+  @@index([sourceType, sourceRef], map: "games_source_idx")
+  @@map("games")
 }
 
-model Round {
-  id           String      @id @default(cuid())
-  sessionId    String
-  session      GameSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
-  // Пореден номер на рунда в играта (0–9).
-  index        Int
-  trackId      String
-  track        Track       @relation(fields: [trackId], references: [id])
+model GameRound {
+  id         String    @id @default(dbgenerated("(gen_random_uuid())::text"))
+  gameId     String    @map("game_id")
+  game       Game      @relation(fields: [gameId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  // Пореден номер на рунда (0–9).
+  index      Int
+  trackId    String?   @map("track_id")
+  track      Track?    @relation(fields: [trackId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  albumId    String?   @map("album_id")
+  album      Album?    @relation(fields: [albumId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  artistId   String?   @map("artist_id")
+  artist     Artist?   @relation(fields: [artistId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  question   Json?
+  // Опити: [{ step, kind: "guess" | "skip", title?, artist?, deezerId?, correct? }]
+  attempts   Json      @default("[]")
   // Индекс на стъпката (0–4 → 0.2/1/2/5/10 сек), на която е познато; null = не е познато.
-  solvedAtStep Int?
-  points       Int         @default(0)
-  // Опити: [{ step, kind: "guess" | "skip", title?, artist?, deezerId? }]
-  guesses      Json
-  createdAt    DateTime    @default(now())
+  solvedStep Int?      @map("solved_step")
+  points     Int       @default(0)
+  answerMs   Int?      @map("answer_ms")
+  startedAt  DateTime? @map("started_at") @db.Timestamptz(6)
+  finishedAt DateTime? @map("finished_at") @db.Timestamptz(6)
 
-  @@unique([sessionId, index])
+  @@unique([gameId, index])
+  @@index([trackId], map: "game_rounds_track_idx")
+  @@index([artistId], map: "game_rounds_artist_idx")
+  @@map("game_rounds")
 }
 
-model Score {
-  id         String      @id @default(cuid())
-  sessionId  String      @unique
-  session    GameSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
-  playerName String?
-  total      Int
-  createdAt  DateTime    @default(now())
+model Achievement {
+  code        String            @id
+  name        String
+  description String
+  icon        String
+  target      Int               @default(1)
+  sortOrder   Int               @default(0) @map("sort_order")
+  isSecret    Boolean           @default(false) @map("is_secret")
+  unlocks     UserAchievement[]
 
-  @@index([total])
+  @@map("achievements")
 }
 
-// --- Мултиплейър (Фаза 5) ---
-// Времевата линия на рунда се изчислява от roundStartAt (виж src/lib/room/timeline.ts),
-// така че не са нужни фонови задачи: състоянието се придвижва при четене.
+model UserAchievement {
+  id              String      @id @default(dbgenerated("(gen_random_uuid())::text"))
+  userId          String?     @map("user_id") @db.Uuid
+  user            Profile?    @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  guestId         String?     @map("guest_id") @db.Uuid
+  guest           Guest?      @relation(fields: [guestId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  achievementCode String      @map("achievement_code")
+  achievement     Achievement @relation(fields: [achievementCode], references: [code], onDelete: Cascade, onUpdate: NoAction)
+  progress        Int         @default(0)
+  unlockedAt      DateTime?   @map("unlocked_at") @db.Timestamptz(6)
+  updatedAt       DateTime    @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@unique([userId, achievementCode])
+  @@unique([guestId, achievementCode])
+  @@map("user_achievements")
+}
+
+model DailyChallenge {
+  // YYYY-MM-DD по българско време
+  date      String
+  gameType  String   @default("listen") @map("game_type")
+  // Подредени Track.id — едни и същи за всички играчи през деня.
+  trackIds  Json     @map("track_ids")
+  payload   Json?
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@id([date, gameType])
+  @@map("daily_challenges")
+}
+
+// --- Мултиплейър ---
+// Времевата линия на рунда се изчислява от roundStartAt (виж src/lib/room/timeline.ts).
 
 model Room {
-  id           String         @id @default(cuid())
+  id           String         @id @default(dbgenerated("(gen_random_uuid())::text"))
   // 6 символа, без лесни за бъркане (0/O, 1/I).
   code         String         @unique
   // "lobby" | "playing" | "finished"
@@ -150,89 +314,117 @@ model Room {
   // JSON на GameSource
   source       String
   label        String
-  roundIndex   Int            @default(-1)
+  roundIndex   Int            @default(-1) @map("round_index")
   // Кога започва откъсът на стъпка 0 в текущия рунд.
-  roundStartAt DateTime?
-  // Ранен край (всички познаха); иначе краят се изчислява от времевата линия.
-  roundEndAt   DateTime?
-  hostId       String?
+  roundStartAt DateTime?      @map("round_start_at") @db.Timestamptz(6)
+  // Ранен край (всички са готови); иначе краят се изчислява от времевата линия.
+  roundEndAt   DateTime?      @map("round_end_at") @db.Timestamptz(6)
+  hostId       String?        @map("host_id")
   // Код на стаята-реванш (след края); останалите играчи влизат в нея с едно докосване.
-  nextCode     String?
+  nextCode     String?        @map("next_code")
+  createdAt    DateTime       @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt    DateTime       @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
   players      RoomPlayer[]
   rounds       RoomRound[]
   guesses      RoomGuess[]
   reactions    RoomReaction[]
-  createdAt    DateTime       @default(now())
-  updatedAt    DateTime       @updatedAt
+
+  @@map("rooms")
 }
 
 model RoomPlayer {
-  id         String         @id @default(cuid())
-  roomId     String
-  room       Room           @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  id         String         @id @default(dbgenerated("(gen_random_uuid())::text"))
+  roomId     String         @map("room_id")
+  room       Room           @relation(fields: [roomId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  userId     String?        @map("user_id") @db.Uuid
+  user       Profile?       @relation(fields: [userId], references: [id], onDelete: SetNull, onUpdate: NoAction)
   name       String
   // Тайна на играча (пази се в localStorage); с нея се правят ходовете.
   token      String         @unique
   score      Int            @default(0)
-  lastSeenAt DateTime       @default(now())
+  lastSeenAt DateTime       @default(now()) @map("last_seen_at") @db.Timestamptz(6)
+  joinedAt   DateTime       @default(now()) @map("joined_at") @db.Timestamptz(6)
   guesses    RoomGuess[]
   reactions  RoomReaction[]
-  joinedAt   DateTime       @default(now())
 
   @@unique([roomId, name])
+  @@map("room_players")
 }
 
 model RoomRound {
-  roomId  String
-  room    Room   @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  roomId  String @map("room_id")
+  room    Room   @relation(fields: [roomId], references: [id], onDelete: Cascade, onUpdate: NoAction)
   index   Int
-  trackId String
-  track   Track  @relation(fields: [trackId], references: [id])
+  trackId String @map("track_id")
+  track   Track  @relation(fields: [trackId], references: [id], onDelete: NoAction, onUpdate: NoAction)
 
   @@id([roomId, index])
+  @@map("room_rounds")
 }
 
 model RoomGuess {
-  id         String     @id @default(cuid())
-  roomId     String
-  room       Room       @relation(fields: [roomId], references: [id], onDelete: Cascade)
-  playerId   String
-  player     RoomPlayer @relation(fields: [playerId], references: [id], onDelete: Cascade)
-  roundIndex Int
+  id         String     @id @default(dbgenerated("(gen_random_uuid())::text"))
+  roomId     String     @map("room_id")
+  room       Room       @relation(fields: [roomId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  playerId   String     @map("player_id")
+  player     RoomPlayer @relation(fields: [playerId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  roundIndex Int        @map("round_index")
   // Стъпката (0–4), на която е направен ходът — всеки играч си минава стъпките сам.
   step       Int
   // "guess" | "skip" (при skip deezerId/title/artist са празни)
   kind       String     @default("guess")
-  deezerId   String
+  deezerId   String     @map("deezer_id")
   title      String
   artist     String
   correct    Boolean
   points     Int
-  createdAt  DateTime   @default(now())
+  createdAt  DateTime   @default(now()) @map("created_at") @db.Timestamptz(6)
 
   @@unique([playerId, roundIndex, step])
-  @@index([roomId, roundIndex])
-}
-
-// --- Дневно предизвикателство (Фаза 6) ---
-
-model DailyChallenge {
-  // YYYY-MM-DD по българско време
-  date      String   @id
-  // Подредени Track.id — едни и същи за всички играчи през деня.
-  trackIds  Json
-  createdAt DateTime @default(now())
+  @@index([roomId, roundIndex], map: "room_guesses_round_idx")
+  @@map("room_guesses")
 }
 
 // Емоджи реакции в стая. Пазят се само за кратко (старите се трият при нова реакция).
 model RoomReaction {
-  id        String     @id @default(cuid())
-  roomId    String
-  room      Room       @relation(fields: [roomId], references: [id], onDelete: Cascade)
-  playerId  String
-  player    RoomPlayer @relation(fields: [playerId], references: [id], onDelete: Cascade)
+  id        String     @id @default(dbgenerated("(gen_random_uuid())::text"))
+  roomId    String     @map("room_id")
+  room      Room       @relation(fields: [roomId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  playerId  String     @map("player_id")
+  player    RoomPlayer @relation(fields: [playerId], references: [id], onDelete: Cascade, onUpdate: NoAction)
   emoji     String
-  createdAt DateTime   @default(now())
+  createdAt DateTime   @default(now()) @map("created_at") @db.Timestamptz(6)
 
-  @@index([roomId, createdAt])
+  @@index([roomId, createdAt], map: "room_reactions_recent_idx")
+  @@map("room_reactions")
+}
+
+// --- Синхронизация на каталога ---
+
+model SyncRun {
+  id               String    @id @default(dbgenerated("(gen_random_uuid())::text"))
+  // cron | manual
+  trigger          String    @default("cron")
+  // running | ok | partial | error
+  status           String    @default("running")
+  startedAt        DateTime  @default(now()) @map("started_at") @db.Timestamptz(6)
+  finishedAt       DateTime? @map("finished_at") @db.Timestamptz(6)
+  cursor           Json?
+  artistsProcessed Int       @default(0) @map("artists_processed")
+  newTracks        Int       @default(0) @map("new_tracks")
+  updatedTracks    Int       @default(0) @map("updated_tracks")
+  errors           Json      @default("[]")
+
+  @@index([startedAt(sort: Desc)], map: "sync_runs_started_idx")
+  @@map("sync_runs")
+}
+
+model SyncFilter {
+  id        String   @id @default(dbgenerated("(gen_random_uuid())::text"))
+  pattern   String   @unique
+  isActive  Boolean  @default(true) @map("is_active")
+  note      String?
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@map("sync_filters")
 }

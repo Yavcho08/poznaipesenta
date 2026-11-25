@@ -6,7 +6,7 @@ import { logIn, logOut, requireAdmin } from "@/lib/admin-auth";
 import { findArtist, importArtist, latinName, type ArtistCandidate } from "@/lib/import-artist";
 import { transliterate } from "@/lib/normalize";
 import { prisma } from "@/lib/prisma";
-import { upsertDeezerTrack } from "@/lib/tracks";
+import { upsertDeezerTrack } from "@/lib/catalog/tracks";
 
 export interface ActionResult {
   ok: boolean;
@@ -92,10 +92,11 @@ export async function togglePopFolkAction(artistId: string): Promise<void> {
 export async function setArtistGenresAction(artistId: string, form: FormData): Promise<void> {
   await requireAdmin();
   const slugs = form.getAll("genre").filter((v): v is string => typeof v === "string");
-  await prisma.artist.update({
-    where: { id: artistId },
-    data: { genres: { set: slugs.map((slug) => ({ slug })) } },
-  });
+  const genres = await prisma.genre.findMany({ where: { slug: { in: slugs } }, select: { id: true } });
+  await prisma.$transaction([
+    prisma.artistGenre.deleteMany({ where: { artistId } }),
+    prisma.artistGenre.createMany({ data: genres.map((g) => ({ artistId, genreId: g.id })) }),
+  ]);
   refresh();
 }
 
@@ -110,7 +111,7 @@ export async function renameArtistAction(artistId: string, form: FormData): Prom
 export async function deleteArtistAction(artistId: string): Promise<void> {
   await requireAdmin();
   // Песните, които не са в плейлист и не са играни, се трият; останалите остават без артист.
-  await prisma.track.deleteMany({ where: { artistId, playlists: { none: {} }, rounds: { none: {} } } });
+  await prisma.track.deleteMany({ where: { artistId, playlists: { none: {} }, rounds: { none: {} }, roomRounds: { none: {} } } });
   await prisma.artist.delete({ where: { id: artistId } });
   refresh();
 }

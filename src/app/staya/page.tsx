@@ -24,11 +24,11 @@ export default function RoomsPage() {
 async function Entry() {
   await connection();
   const [popFolk, genres, playlists] = await Promise.all([
-    prisma.track.count({ where: { artist: { isPopFolk: true } } }),
+    prisma.track.count({ where: { isActive: true, artist: { isPopFolk: true, isActive: true } } }),
     prisma.genre.findMany({
       where: { slug: { not: "pop-folk" } },
       orderBy: { name: "asc" },
-      include: { artists: { select: { _count: { select: { tracks: true } } } } },
+      include: { artists: { select: { artist: { select: { _count: { select: { tracks: { where: { isActive: true } } } } } } } } },
     }),
     prisma.playlist.findMany({
       orderBy: [{ category: "asc" }, { sortOrder: "asc" }],
@@ -42,7 +42,7 @@ async function Entry() {
     ...genres.map((g) => ({
       label: `Жанр: ${g.name}`,
       source: { type: "genre" as const, slug: g.slug },
-      count: g.artists.reduce((s, a) => s + a._count.tracks, 0),
+      count: g.artists.reduce((s, { artist }) => s + artist._count.tracks, 0),
     })),
   ].filter((o) => o.count >= ROUNDS_PER_GAME);
 

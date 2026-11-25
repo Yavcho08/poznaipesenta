@@ -3,7 +3,7 @@
 //   npm run import:artist -- "Азис" --id=356996        (ръчно избран профил)
 //   npm run import:artist -- "Азис" --pop-folk
 // При несигурно съвпадение скриптът спира и показва кандидатите — не гадае.
-import "dotenv/config";
+import "./env";
 import { findArtist, importArtist, type ArtistCandidate } from "@/lib/import-artist";
 
 function formatCandidate(c: ArtistCandidate): string {

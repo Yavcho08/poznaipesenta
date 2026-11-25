@@ -3,7 +3,7 @@
 //   npm run db:seed -- --refresh    — обновява песните на всички
 //   npm run db:seed -- --rebuild    — пресъздава плейлистите по десетилетия
 // При несигурно съвпадение артистът се пропуска и се показват кандидатите.
-import "dotenv/config";
+import "../scripts/env";
 import { findArtist, importArtist, type ArtistCandidate } from "@/lib/import-artist";
 import { looseKey } from "@/lib/normalize";
 import { prisma } from "@/lib/prisma";
@@ -44,10 +44,9 @@ async function seedArtists(): Promise<Problem[]> {
           ? existing.find((a) => a.deezerId === String(artist.deezerId))
           : existing.find((a) => looseKey(a.name) === looseKey(artist.name));
         if (row) {
-          await prisma.artist.update({
-            where: { id: row.id },
-            data: { genres: { connect: { slug: genre.slug } }, ...(genre.isPopFolk && { isPopFolk: true }) },
-          });
+          const genreRow = await prisma.genre.findUniqueOrThrow({ where: { slug: genre.slug } });
+          await prisma.artistGenre.createMany({ data: [{ artistId: row.id, genreId: genreRow.id }], skipDuplicates: true });
+          if (genre.isPopFolk) await prisma.artist.update({ where: { id: row.id }, data: { isPopFolk: true } });
         }
         console.log(`  = ${artist.name} (вече е внесен)`);
         continue;

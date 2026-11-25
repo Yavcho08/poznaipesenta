@@ -11,7 +11,8 @@ import type { Track } from "@/generated/prisma/client";
  * с генератор, зависещ от датата, и се записват, за да не се променят през деня.
  */
 async function dailyTracks(date: string): Promise<Track[]> {
-  const existing = await prisma.dailyChallenge.findUnique({ where: { date } });
+  const key = { date_gameType: { date, gameType: "listen" } };
+  const existing = await prisma.dailyChallenge.findUnique({ where: key });
   if (!existing) {
     const tracks = await pickPlayableTracks(await getPool({ type: "popfolk" }), ROUNDS_PER_GAME, seededRandom(date));
     if (tracks.length < ROUNDS_PER_GAME) throw new GameError("Няма достатъчно поп-фолк песни за днешното предизвикателство", 503);
@@ -23,7 +24,7 @@ async function dailyTracks(date: string): Promise<Track[]> {
     }
   }
 
-  const row = await prisma.dailyChallenge.findUniqueOrThrow({ where: { date } });
+  const row = await prisma.dailyChallenge.findUniqueOrThrow({ where: key });
   const ids = Array.isArray(row.trackIds) ? row.trackIds.filter((id): id is string => typeof id === "string") : [];
   const tracks = await prisma.track.findMany({ where: { id: { in: ids } } });
   const byId = new Map(tracks.map((t) => [t.id, t]));

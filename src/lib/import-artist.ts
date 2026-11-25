@@ -14,7 +14,7 @@ import { hasCyrillic, looseKey, songKey, transliterate } from "@/lib/normalize";
 const MIN_TRACKS_BEFORE_ALBUMS = 40;
 const MAX_TRACKS = 100;
 import { prisma } from "@/lib/prisma";
-import { upsertDeezerTrack } from "@/lib/tracks";
+import { upsertDeezerTrack } from "@/lib/catalog/tracks";
 
 export interface ArtistCandidate {
   id: number;
@@ -130,7 +130,6 @@ export async function importArtist(
   options: { isPopFolk?: boolean; genreSlugs?: string[] } = {},
 ): Promise<ImportResult> {
   const remote = await getArtist(String(deezerId));
-  const genres = (options.genreSlugs ?? []).map((slug) => ({ slug }));
 
   const artist = await prisma.artist.upsert({
     where: { deezerId: String(deezerId) },
@@ -139,7 +138,6 @@ export async function importArtist(
       nameLatin: latinName(name),
       imageUrl: remote.picture_big ?? remote.picture_medium ?? null,
       ...(options.isPopFolk !== undefined && { isPopFolk: options.isPopFolk }),
-      ...(genres.length > 0 && { genres: { connect: genres } }),
     },
     create: {
       name,
@@ -147,9 +145,15 @@ export async function importArtist(
       deezerId: String(deezerId),
       imageUrl: remote.picture_big ?? remote.picture_medium ?? null,
       isPopFolk: options.isPopFolk ?? false,
-      genres: { connect: genres },
     },
   });
+  if (options.genreSlugs?.length) {
+    const genres = await prisma.genre.findMany({ where: { slug: { in: options.genreSlugs } }, select: { id: true } });
+    await prisma.artistGenre.createMany({
+      data: genres.map((g) => ({ artistId: artist.id, genreId: g.id })),
+      skipDuplicates: true,
+    });
+  }
 
   const top = await getArtistTop(String(deezerId), 100);
   let imported = 0;

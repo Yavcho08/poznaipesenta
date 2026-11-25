@@ -29,6 +29,9 @@ export interface DeezerAlbum {
   cover_medium?: string;
   cover_big?: string;
   release_date?: string;
+  /** album | single | ep | compile (само в пълния обект и в списъка с албуми на артист) */
+  record_type?: string;
+  artist?: { id: number; name: string };
 }
 
 export interface DeezerTrack {
@@ -165,6 +168,10 @@ export function getArtistAlbums(id: string): Promise<DeezerAlbum[]> {
     const list = await request<DeezerList<DeezerAlbum>>(`/artist/${id}/albums?limit=100`);
     return list.data;
   });
+}
+
+export function getAlbum(id: string): Promise<DeezerAlbum> {
+  return cached(`dz:album:${id}`, METADATA_TTL_MS, () => request<DeezerAlbum>(`/album/${id}`));
 }
 
 /** Песните в албума. Обектите нямат поле album — добавяме го от самия албум. */

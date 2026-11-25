@@ -77,6 +77,8 @@ export function Game({
 }) {
   const playerRef = useRef<ClipPlayer | null>(null);
   const buffersRef = useRef(new Map<number, Promise<Clip>>());
+  /** Кога е пуснат първият клип на рунда — за времето за отговор (само статистика, не точки). */
+  const roundStartRef = useRef<{ index: number; at: number } | null>(null);
 
   const [phase, setPhase] = useState<Phase>("intro");
   const [error, setError] = useState<string | null>(null);
@@ -173,6 +175,7 @@ export function Game({
     const index = g.currentRound;
     setViewIndex(index);
     setPhase("playing");
+    roundStartRef.current = { index, at: performance.now() };
     await playClip(g.id, index, STEPS[g.rounds[index].step]);
     prefetch(g, index);
   };
@@ -204,6 +207,11 @@ export function Game({
 
   const round: RoundView | undefined = game?.rounds[viewIndex];
 
+  const elapsedInRound = (index: number): number | undefined => {
+    const start = roundStartRef.current;
+    return start && start.index === index ? Math.round(performance.now() - start.at) : undefined;
+  };
+
   const move = async (body: { kind: "skip" } | { kind: "guess"; deezerId: string }) => {
     if (!game || !round || round.done || busy) return;
     player().unlock();
@@ -212,7 +220,7 @@ export function Game({
       const data = await api<GameResponse>(`/api/game/${game.id}/rounds/${viewIndex}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
+        body: JSON.stringify({ ...body, elapsedMs: elapsedInRound(viewIndex) }),
       });
       setGame(data.game);
       setSelected(null);
@@ -252,6 +260,7 @@ export function Game({
     setViewIndex(index);
     setSelected(null);
     setError(null);
+    roundStartRef.current = { index, at: performance.now() };
     await playClip(game.id, index, STEPS[0]);
     prefetch(game, index);
   };

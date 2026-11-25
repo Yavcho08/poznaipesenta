@@ -45,15 +45,16 @@ function ModeCard({ href, icon, title, text }: { href: string; icon: string; tit
 
 async function loadPickerData(): Promise<PickerData> {
   const [popFolkCount, genres, artists, playlists] = await Promise.all([
-    prisma.track.count({ where: { artist: { isPopFolk: true } } }),
+    prisma.track.count({ where: { isActive: true, artist: { isPopFolk: true, isActive: true } } }),
     prisma.genre.findMany({
       where: { slug: { not: "pop-folk" } },
       orderBy: { name: "asc" },
-      include: { artists: { select: { imageUrl: true, _count: { select: { tracks: true } } } } },
+      include: { artists: { select: { artist: { select: { imageUrl: true, _count: { select: { tracks: { where: { isActive: true } } } } } } } } },
     }),
     prisma.artist.findMany({
+      where: { isActive: true },
       orderBy: { name: "asc" },
-      select: { id: true, name: true, imageUrl: true, isPopFolk: true, _count: { select: { tracks: true } } },
+      select: { id: true, name: true, imageUrl: true, isPopFolk: true, _count: { select: { tracks: { where: { isActive: true } } } } },
     }),
     prisma.playlist.findMany({
       orderBy: [{ sortOrder: "asc" }, { createdAt: "desc" }],
@@ -66,8 +67,8 @@ async function loadPickerData(): Promise<PickerData> {
     genres: genres.map((g) => ({
       slug: g.slug,
       name: g.name,
-      count: g.artists.reduce((sum, a) => sum + a._count.tracks, 0),
-      images: g.artists.flatMap((a) => (a.imageUrl ? [a.imageUrl] : [])).slice(0, 4),
+      count: g.artists.reduce((sum, { artist }) => sum + artist._count.tracks, 0),
+      images: g.artists.flatMap(({ artist }) => (artist.imageUrl ? [artist.imageUrl] : [])).slice(0, 4),
     })),
     artists: artists
       .filter((a) => a._count.tracks > 0)

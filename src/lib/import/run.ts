@@ -6,7 +6,7 @@ import type { SourceTrack } from "@/lib/import/similarity";
 import { getPlaylistTracks as getSpotifyPlaylistTracks, SpotifyApiError } from "@/lib/import/spotify-api";
 import { readSpotifyEmbed } from "@/lib/import/spotify-embed";
 import { prisma } from "@/lib/prisma";
-import { upsertDeezerTrack } from "@/lib/tracks";
+import { upsertDeezerTrack } from "@/lib/catalog/tracks";
 import type { PlaylistSource } from "@/generated/prisma/client";
 
 export type ImportRequest =

@@ -13,7 +13,8 @@
 - TypeScript strict, **без `any`**. Тайни само в `.env`; всяка нова променлива — и в `.env.example`.
 - Целият интерфейс е на български.
 - Next.js 16 с `cacheComponents: true`: данни от базата/мрежата в страници → в `<Suspense>` или `"use cache"`; `"use cache"` не може директно в тялото на route handler — изнеси в помощна функция. При съмнение чети `node_modules/next/dist/docs/`.
-- Prisma 7: клиентът се генерира в `src/generated/prisma` (import от `@/generated/prisma/client`), връзката е през driver adapter (`src/lib/prisma.ts`). Схемата трябва да работи и на SQLite, и на Postgres: без скаларни списъци; списъците са релации или `Json`.
+- База: **Supabase Postgres**. Източникът на истината са SQL миграциите в `supabase/migrations/` (с RLS на всяка таблица). `prisma/schema.prisma` е само за клиента (camelCase модели с `@map` към snake_case) — след нова миграция го обнови и пусни `npm run db:check` (трябва „empty migration“). **Никога `prisma migrate`.** Prisma не допуска FK към `auth.users` → такива връзки са с тригери.
+- Prisma 7: клиентът се генерира в `src/generated/prisma` (import от `@/generated/prisma/client`), връзката е през `@prisma/adapter-pg` (`src/lib/prisma.ts`). Сървърът е роля `postgres` (заобикаля RLS); RLS пази Data API-то (браузъра).
 - Deezer ID-тата са `String` (надхвърлят int32).
 
 ## Музика и аудио — непроменими правила
@@ -26,12 +27,15 @@
 
 ## Команди
 - `npm run dev` — разработка
-- `npm run db:migrate` — нова миграция + `prisma generate` (Prisma 7 не генерира сам). След миграция **рестартирай `npm run dev`** — клиентът е кеширан в `globalThis` и иначе е стар.
-- `npm run db:seed` — seed
+- `npm run db:push` — прилага новите SQL миграции върху `DIRECT_URL` (`-- --env=файл` за друга база); `npm run db:check` — схема ↔ база. После `npx prisma generate` и **рестартирай `npm run dev`** (клиентът е кеширан в `globalThis`).
+- `npm run db:seed` — seed; `npm run db:migrate-data -- --from=<sqlite файл|postgres URL>` — пренос от старата схема; `npm run catalog:backfill` — албуми/години/дуети/`is_active` от Deezer (продължава, ако се прекъсне)
+- Скриптове в `scripts/` импортират първо `./env` (зарежда `.env.local` и `.env`).
 - `npm run import:artist -- "Име" [--id=DEEZER_ID] [--pop-folk]` — внос на артист от Deezer; при несигурно съвпадение спира и показва кандидатите. Скриптове, които ползват `src/lib` (там е `server-only`), се пускат с `tsx --conditions=react-server`.
 
 ## Структура
 - `src/lib/deezer.ts` — Deezer клиент (кеш, rate limit); `src/lib/itunes.ts` — резервен звук; `src/lib/cache.ts` — TTL кеш в паметта
+- `src/lib/catalog/tracks.ts` — запис на песен от Deezer (албум, `track_artists`, `is_active`, година); `src/lib/catalog/year.ts` — най-ранната година (албум, ISRC, други версии)
+- Игрите ползват само `tracks.is_active` (`PLAYABLE` в `src/lib/game/server.ts`); песен без откъс в Deezer и iTunes → `is_active=false`
 - `src/lib/normalize.ts` — транслитерация и ключове за сравнение на песни
 - `src/lib/game/rules.ts` (общи за клиент/сървър), `src/lib/game/server.ts` (логика на играта)
 - `src/lib/audio/clip-player.ts` — Web Audio плейър (`play(..., at)` за насрочено пускане)
@@ -54,16 +58,14 @@
 - Route handler, който чете бисквитки или трябва да е уникален при всяка заявка, започва с `await connection()` — иначе `next build` може да го пререндерира като статичен.
 
 ## Продукция (Vercel)
-- https://poznai-pesenta.vercel.app — Vercel проект `poznai-pesenta` (yavcho08s-projects), Neon база `poznai-pesenta-db` (Франкфурт), свързана през Vercel Marketplace (`DATABASE_URL`, `DATABASE_URL_UNPOOLED`). `ADMIN_PASSWORD`, `SPOTIFY_CLIENT_ID` и `SPOTIFY_REDIRECT_URI` (`https://poznai-pesenta.vercel.app/api/spotify/callback`) са зададени във Vercel. Spotify приложението е в Development Mode: входът работи само за акаунти, добавени в Spotify Dashboard → User Management (до 5); всички песни — само от собствени/съвместни плейлисти, чуждите минават през embed (до 100).
+- Supabase: `poznai-pesenta-dev` (локалната разработка, `.env.local`) и `poznai-pesenta-prod` (още не е създаден/свързан). Ключовете и паролите са в `.env.local` (`SUPABASE_DEV_REF`, `SUPABASE_DEV_DB_PASSWORD`, `SUPABASE_ACCESS_TOKEN`). Management API: `https://api.supabase.com/v1/...` с `SUPABASE_ACCESS_TOKEN`.
+- https://poznai-pesenta.vercel.app — Vercel проект `poznai-pesenta` (yavcho08s-projects). **Докато не превключим към Supabase prod**, продукцията е още старият код върху Neon `poznai-pesenta-db` (`DATABASE_URL`, `DATABASE_URL_UNPOOLED`) — не деплойвай новия код, преди prod базата да е готова. `ADMIN_PASSWORD`, `SPOTIFY_CLIENT_ID` и `SPOTIFY_REDIRECT_URI` (`https://poznai-pesenta.vercel.app/api/spotify/callback`) са зададени във Vercel. Spotify приложението е в Development Mode: входът работи само за акаунти, добавени в Spotify Dashboard → User Management (до 5); всички песни — само от собствени/съвместни плейлисти, чуждите минават през embed (до 100).
 - Деплой: `npx vercel deploy --prod --yes` (build: `npm run vercel-build` от `vercel.json`).
 - Код: https://github.com/Yavcho08/poznaipesenta (публично, клон `main`, remote `origin`). Преди commit провери, че няма тайни — `.env*`, `.vercel`, базата и `.claude/settings.local.json` са в `.gitignore`. Vercel още **не** е свързан с хранилището (деплоят е ръчен).
-- Данни: каталогът се прави локално (seed/внос в SQLite) и се прехвърля с `scripts/copy-to-postgres.ts` (виж коментара в него). **Никога** `vercel env pull` в `.env.local` — Postgres адресът там би превключил локалната разработка към продукционната база; тегли в scratchpad.
+- **Никога** `vercel env pull` в `.env.local` — продукционният адрес там би превключил локалната разработка към продукционната база; тегли в scratchpad.
 - На компютъра на потребителя Avast сканира HTTPS и новите връзки се отварят за ~12 сек., а Node `fetch` се отказва след 10 → Vercel CLI дава „fetch failed“. Пусни CLI с `NODE_OPTIONS=--import=<preload>`, който вдига `connect.timeout` на undici (`setGlobalDispatcher(new Agent({ connect: { timeout: 60_000 } }))`).
 
-## База: SQLite локално, Postgres в продукция
-- Изборът е по `DATABASE_URL` (`prisma.config.ts`, `src/lib/prisma.ts`).
-- `prisma/postgres/schema.prisma` е **генериран** — не го редактирай; `npm run db:migrate` го синхронизира (`db:pg:sync`). `vercel-build` проверява, че е актуален.
-- Postgres миграциите са в `prisma/postgres/migrations` (виж README → „Промени в схемата след деплой“).
+## API
 - API: `/api/game` (POST нова игра), `/api/game/[id]` (GET състояние), `/api/game/[id]/rounds/[index]` (POST ход), `/api/game/[id]/rounds/[index]/audio` (звук на рунда, без да издава песента), `/api/audio/[deezerId]` (пълен preview)
 - `npm test` — Vitest
 - `npm run typecheck`, `npm run lint`
