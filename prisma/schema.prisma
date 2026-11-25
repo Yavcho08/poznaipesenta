@@ -174,18 +174,22 @@ model PlaylistTrack {
 
 model Profile {
   // = auth.users.id (FK е в SQL миграцията)
-  id           String            @id @db.Uuid
-  username     String?
-  avatarUrl    String?           @map("avatar_url")
+  id              String            @id @db.Uuid
+  username        String?
+  avatarUrl       String?           @map("avatar_url")
   // user | admin
-  role         String            @default("user")
-  xp           Int               @default(0)
-  createdAt    DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt    DateTime          @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
-  games        Game[]
-  achievements UserAchievement[]
-  mergedGuests Guest[]
-  roomPlayers  RoomPlayer[]
+  role            String            @default("user")
+  xp              Int               @default(0)
+  createdAt       DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime          @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  games           Game[]
+  achievements    UserAchievement[]
+  mergedGuests    Guest[]
+  roomPlayers     RoomPlayer[]
+  friendsOut      Friendship[]      @relation("FriendRequester")
+  friendsIn       Friendship[]      @relation("FriendAddressee")
+  invitesSent     RoomInvite[]      @relation("InviteFrom")
+  invitesReceived RoomInvite[]      @relation("InviteTo")
 
   @@map("profiles")
 }
@@ -328,6 +332,7 @@ model Room {
   rounds       RoomRound[]
   guesses      RoomGuess[]
   reactions    RoomReaction[]
+  invites      RoomInvite[]
 
   @@map("rooms")
 }
@@ -427,4 +432,38 @@ model SyncFilter {
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
 
   @@map("sync_filters")
+}
+
+// --- Приятели и покани ---
+
+model Friendship {
+  id          String    @id @default(dbgenerated("(gen_random_uuid())::text"))
+  requesterId String    @map("requester_id") @db.Uuid
+  requester   Profile   @relation("FriendRequester", fields: [requesterId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  addresseeId String    @map("addressee_id") @db.Uuid
+  addressee   Profile   @relation("FriendAddressee", fields: [addresseeId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  // pending | accepted
+  status      String    @default("pending")
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  respondedAt DateTime? @map("responded_at") @db.Timestamptz(6)
+
+  @@unique([requesterId, addresseeId])
+  @@index([addresseeId, status], map: "friendships_addressee_idx")
+  @@map("friendships")
+}
+
+model RoomInvite {
+  id         String    @id @default(dbgenerated("(gen_random_uuid())::text"))
+  roomId     String    @map("room_id")
+  room       Room      @relation(fields: [roomId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  fromUserId String    @map("from_user_id") @db.Uuid
+  fromUser   Profile   @relation("InviteFrom", fields: [fromUserId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  toUserId   String    @map("to_user_id") @db.Uuid
+  toUser     Profile   @relation("InviteTo", fields: [toUserId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  seenAt     DateTime? @map("seen_at") @db.Timestamptz(6)
+
+  @@unique([roomId, toUserId])
+  @@index([toUserId, createdAt(sort: Desc)], map: "room_invites_to_idx")
+  @@map("room_invites")
 }

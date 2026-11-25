@@ -10,14 +10,27 @@ export function roomTopic(code: string): string {
   return `room:${code.toUpperCase()}`;
 }
 
-export function notifyRoom(code: string): void {
+/** Канал за известия на потребител (покана, молба за приятелство) — само сигнал, без данни. */
+export function userTopic(userId: string): string {
+  return `user:${userId}`;
+}
+
+function broadcast(topic: string, event: string): void {
   const url = supabaseUrl();
   const key = process.env.SUPABASE_SECRET_KEY;
   if (!url || !key) return;
   void fetch(`${url}/realtime/v1/api/broadcast`, {
     method: "POST",
     headers: { apikey: key, Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ messages: [{ topic: roomTopic(code), event: "changed", payload: { at: Date.now() }, private: false }] }),
+    body: JSON.stringify({ messages: [{ topic, event, payload: { at: Date.now() }, private: false }] }),
     cache: "no-store",
   }).catch(() => undefined);
+}
+
+export function notifyRoom(code: string): void {
+  broadcast(roomTopic(code), "changed");
+}
+
+export function notifyUser(userId: string): void {
+  broadcast(userTopic(userId), "notify");
 }

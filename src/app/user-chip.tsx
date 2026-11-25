@@ -4,6 +4,7 @@ import { connection } from "next/server";
 import { Avatar } from "@/components/avatar";
 import { getViewer } from "@/lib/auth/viewer";
 import { levelFromXp } from "@/lib/achievements/progress";
+import { NotificationBell } from "./notification-bell";
 
 async function Chip() {
   await connection();
@@ -17,6 +18,8 @@ async function Chip() {
   }
   const name = viewer.profile.username ?? "Профил";
   return (
+    <>
+    <NotificationBell userId={viewer.userId} />
     <Link href="/profil" className="flex shrink-0 items-center gap-2 rounded-full py-1 pl-1 pr-1 hover:bg-surface-strong sm:pr-3" title={name}>
       <span className="relative">
         <Avatar value={viewer.profile.avatarUrl} name={viewer.profile.username ?? viewer.email} size={30} />
@@ -29,6 +32,7 @@ async function Chip() {
       </span>
       <span className="hidden max-w-28 truncate text-sm font-semibold sm:inline">{name}</span>
     </Link>
+    </>
   );
 }
 

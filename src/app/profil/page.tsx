@@ -35,9 +35,27 @@ async function Profile() {
         <div className="min-w-0">
           <h1 className="truncate font-display text-2xl font-bold">{profile.username ?? "Без име"}</h1>
           <p className="truncate text-sm text-muted">{viewer.email}</p>
-          {profile.role === "admin" && <span className="mt-1 inline-block rounded-full bg-accent/20 px-2 py-0.5 text-xs text-accent">админ</span>}
+          <div className="mt-1 flex flex-wrap gap-2">
+            {profile.role === "admin" && <span className="rounded-full bg-accent/20 px-2 py-0.5 text-xs text-accent">админ</span>}
+            <Link href="/priyateli" className="rounded-full border border-line px-2 py-0.5 text-xs hover:bg-surface-strong">
+              👫 Приятели
+            </Link>
+          </div>
         </div>
       </header>
+
+      <section id="redaktirai" className="card space-y-4 p-4">
+        <h2 className="font-display text-lg font-bold">✏️ Име и аватар</h2>
+        <div className="space-y-2">
+          <h3 className="text-sm font-semibold">Име в играта</h3>
+          <UsernameForm current={profile.username} />
+        </div>
+        <div className="space-y-2">
+          <h3 className="text-sm font-semibold">Аватар</h3>
+          <AvatarPicker current={profile.avatarUrl} />
+        </div>
+      </section>
+
 
       <section className="card p-4">
         <LevelBar info={level} />
@@ -66,15 +84,7 @@ async function Profile() {
         <AchievementGrid items={achievements} />
       </section>
 
-      <section className="card space-y-3 p-4">
-        <h2 className="font-semibold">Име в играта</h2>
-        <UsernameForm current={profile.username} />
-      </section>
 
-      <section className="card space-y-3 p-4">
-        <h2 className="font-semibold">Аватар</h2>
-        <AvatarPicker current={profile.avatarUrl} />
-      </section>
 
       <section className="flex flex-wrap gap-3">
         <form action={signOutAction}>

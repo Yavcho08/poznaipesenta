@@ -13,6 +13,7 @@ import { REACTIONS, type RoomState } from "@/lib/room/types";
 import { ClipProgress } from "../../igra/clip-progress";
 import { loadName, loadToken, saveName, saveToken } from "../room-storage";
 import { supabaseBrowser } from "@/lib/supabase/browser";
+import { InviteFriends } from "./invite-friends";
 
 /** Резервно питане — основният сигнал за промяна идва по Supabase Realtime (src/lib/room/realtime.ts). */
 const POLL_MS = 2500;
@@ -48,7 +49,7 @@ async function measureClockOffset(): Promise<number> {
   return best.offset;
 }
 
-export function Room({ code }: { code: string }) {
+export function Room({ code, defaultName = null }: { code: string; defaultName?: string | null }) {
   const router = useRouter();
   const playerRef = useRef<ClipPlayer | null>(null);
   const pendingBuffers = useRef(new Map<number, Promise<Clip>>());
@@ -82,8 +83,8 @@ export function Room({ code }: { code: string }) {
     tokenRef.current = saved;
     // eslint-disable-next-line react-hooks/set-state-in-effect -- еднократно четене от localStorage
     setToken(saved);
-    setJoinName(loadName());
-  }, [code]);
+    setJoinName(loadName() || defaultName || "");
+  }, [code, defaultName]);
 
   useEffect(() => {
     void measureClockOffset().then((offset) => (offsetRef.current = offset));
@@ -488,6 +489,9 @@ function Lobby({
           🔊 Включи звука предварително
         </button>
       )}
+      <div className="border-t border-line pt-4">
+        <InviteFriends code={state.code} playerNames={state.players.map((p) => p.name)} />
+      </div>
     </div>
   );
 }

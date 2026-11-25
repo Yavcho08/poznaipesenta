@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import { Suspense } from "react";
+import { connection } from "next/server";
 import { Room } from "./room";
+import { getViewer } from "@/lib/auth/viewer";
 
 export const metadata: Metadata = { title: "Стая · Познай песента" };
 
@@ -14,5 +16,7 @@ export default function RoomPage({ params }: PageProps<"/staya/[code]">) {
 
 async function RoomWithCode({ params }: { params: PageProps<"/staya/[code]">["params"] }) {
   const { code } = await params;
-  return <Room code={code.toUpperCase()} />;
+  await connection();
+  const viewer = await getViewer();
+  return <Room code={code.toUpperCase()} defaultName={viewer?.profile.username ?? null} />;
 }

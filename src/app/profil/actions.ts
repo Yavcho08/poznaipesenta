@@ -67,3 +67,33 @@ export async function deleteAccountAction(_prev: ProfileFormState, form: FormDat
   await supabase.auth.signOut();
   redirect("/?iztrit=1");
 }
+
+const AVATAR_BUCKET = "avatars";
+const MAX_AVATAR_BYTES = 600 * 1024;
+
+/**
+ * Собствена снимка за аватар. Браузърът я смалява до 256×256 JPEG; тук проверяваме тип/размер
+ * и качваме в Supabase Storage (публичен bucket „avatars“, папка = id на потребителя).
+ */
+export async function uploadAvatarAction(form: FormData): Promise<ProfileFormState> {
+  const viewer = await requireViewer();
+  const file = form.get("file");
+  if (!(file instanceof File) || file.size === 0) return { ok: false, message: "Избери снимка" };
+  if (!["image/jpeg", "image/png", "image/webp"].includes(file.type)) return { ok: false, message: "Само JPG, PNG или WebP" };
+  if (file.size > MAX_AVATAR_BYTES) return { ok: false, message: "Снимката е твърде голяма" };
+
+  const storage = createSupabaseAdmin().storage.from(AVATAR_BUCKET);
+  const ext = file.type === "image/png" ? "png" : file.type === "image/webp" ? "webp" : "jpg";
+  const path = `${viewer.userId}/${Date.now()}.${ext}`;
+  const { error } = await storage.upload(path, Buffer.from(await file.arrayBuffer()), { contentType: file.type, upsert: false });
+  if (error) return { ok: false, message: "Качването не успя. Опитай пак." };
+
+  // Старите снимки на потребителя се трият (пазим само текущата).
+  const { data: old } = await storage.list(viewer.userId);
+  const stale = (old ?? []).map((o) => `${viewer.userId}/${o.name}`).filter((p) => p !== path);
+  if (stale.length) await storage.remove(stale);
+
+  await prisma.profile.update({ where: { id: viewer.userId }, data: { avatarUrl: storage.getPublicUrl(path).data.publicUrl } });
+  revalidatePath("/", "layout");
+  return { ok: true, message: "Снимката е сменена" };
+}

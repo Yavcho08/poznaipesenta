@@ -1,9 +1,9 @@
 "use client";
 
-import { useActionState, useTransition } from "react";
+import { useActionState, useRef, useState, useTransition } from "react";
 import { Avatar, AVATAR_EMOJIS } from "@/components/avatar";
 import { USERNAME_MAX, USERNAME_MIN } from "@/lib/auth/username";
-import { deleteAccountAction, saveAvatarAction, saveUsernameAction, type ProfileFormState } from "./actions";
+import { deleteAccountAction, saveAvatarAction, saveUsernameAction, uploadAvatarAction, type ProfileFormState } from "./actions";
 
 const initial: ProfileFormState = { ok: false, message: null };
 
@@ -35,11 +35,55 @@ export function UsernameForm({ current }: { current: string | null }) {
   );
 }
 
+/** Изрязва квадрат от средата и смалява до 256×256 JPEG (в браузъра — бързо и малко за качване). */
+async function squareJpeg(file: File, size = 256): Promise<Blob> {
+  const bitmap = await createImageBitmap(file);
+  const side = Math.min(bitmap.width, bitmap.height);
+  const canvas = document.createElement("canvas");
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) throw new Error("Браузърът не може да обработи снимката");
+  ctx.drawImage(bitmap, (bitmap.width - side) / 2, (bitmap.height - side) / 2, side, side, 0, 0, size, size);
+  bitmap.close();
+  return new Promise((resolve, reject) => canvas.toBlob((b) => (b ? resolve(b) : reject(new Error("Грешка"))), "image/jpeg", 0.86));
+}
+
+function UploadAvatar() {
+  const input = useRef<HTMLInputElement>(null);
+  const [pending, start] = useTransition();
+  const [message, setMessage] = useState<ProfileFormState | null>(null);
+  const onFile = (file: File | undefined) => {
+    if (!file) return;
+    start(async () => {
+      try {
+        const blob = await squareJpeg(file);
+        const form = new FormData();
+        form.append("file", new File([blob], "avatar.jpg", { type: "image/jpeg" }));
+        setMessage(await uploadAvatarAction(form));
+      } catch {
+        setMessage({ ok: false, message: "Тази снимка не може да се използва" });
+      }
+      if (input.current) input.current.value = "";
+    });
+  };
+  return (
+    <div className="w-full space-y-1">
+      <input ref={input} type="file" accept="image/jpeg,image/png,image/webp" className="hidden" onChange={(e) => onFile(e.target.files?.[0])} />
+      <button type="button" onClick={() => input.current?.click()} disabled={pending} className="btn-ghost px-4 py-2 text-sm">
+        {pending ? "Качвам…" : "📷 Качи своя снимка"}
+      </button>
+      {message?.message && <p className={`text-xs ${message.ok ? "text-emerald-300" : "text-red-300"}`}>{message.message}</p>}
+    </div>
+  );
+}
+
 export function AvatarPicker({ current }: { current: string | null }) {
   const [pending, start] = useTransition();
   const pick = (value: string) => start(() => saveAvatarAction(value));
   return (
     <div className={`flex flex-wrap gap-2 ${pending ? "opacity-60" : ""}`}>
+      <UploadAvatar />
       <button
         type="button"
         onClick={() => pick("provider")}

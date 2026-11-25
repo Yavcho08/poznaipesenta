@@ -18,7 +18,7 @@ if (!url || !anonKey || !secret) {
 
 const PUBLIC_READ = ["artists", "genres", "artist_genres", "albums", "tracks", "track_artists", "playlists", "playlist_tracks", "achievements", "profiles"];
 const HIDDEN = ["guests", "daily_challenges", "rooms", "room_players", "room_rounds", "room_guesses", "room_reactions", "sync_runs", "sync_filters"];
-const OWN_ONLY = ["games", "game_rounds", "user_achievements"];
+const OWN_ONLY = ["games", "game_rounds", "user_achievements", "friendships", "room_invites"];
 
 let failures = 0;
 function check(ok: boolean, label: string): void {
