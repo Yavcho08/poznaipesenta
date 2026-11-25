@@ -5,7 +5,7 @@ import { usePathname } from "next/navigation";
 import { Suspense, type ReactNode } from "react";
 
 const NAV = [
-  { href: "/", label: "Игра", icon: "🎧" },
+  { href: "/igri", label: "Игри", icon: "🎧" },
   { href: "/dnevno", label: "Дневно", icon: "📅" },
   { href: "/staya", label: "С приятели", icon: "👥" },
   { href: "/klasaciya", label: "Класация", icon: "🏆" },
@@ -13,7 +13,7 @@ const NAV = [
 ];
 
 function isActive(pathname: string, href: string): boolean {
-  if (href === "/") return pathname === "/" || pathname.startsWith("/igra");
+  if (href === "/igri") return pathname.startsWith("/igr");
   return pathname.startsWith(href);
 }
 

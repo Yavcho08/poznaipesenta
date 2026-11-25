@@ -297,7 +297,7 @@ export function Game({
           <p className="mx-auto w-fit rounded-full border border-line bg-surface px-3 py-1 text-sm">
             {label}
             {!daily && !challenge && (
-              <Link href="/" className="ml-2 text-muted underline">
+              <Link href="/igrai" className="ml-2 text-muted underline">
                 смени
               </Link>
             )}

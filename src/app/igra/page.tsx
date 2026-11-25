@@ -27,7 +27,7 @@ async function GameWithSource({ searchParams }: { searchParams: PageProps<"/igra
       return (
         <div className="card mx-auto max-w-md space-y-4 p-6 text-center">
           <p className="font-semibold">Линкът за предизвикателство не е валиден или е изтекъл.</p>
-          <Link href="/" className="btn-primary">
+          <Link href="/igrai" className="btn-primary">
             Към играта
           </Link>
         </div>

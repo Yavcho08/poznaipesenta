@@ -56,22 +56,23 @@ function shuffle<T>(items: T[], random: () => number): T[] {
 /** Само песни, които могат да се пуснат (is_active) и не са на скрит артист. */
 const PLAYABLE = { isActive: true, NOT: { artist: { isActive: false } } } satisfies Prisma.TrackWhereInput;
 
-/** Всички песни от избрания източник. */
-export async function getPool(source: GameSource): Promise<Track[]> {
+/** Условието за песните на източника (само такива, които могат да се пуснат). */
+export function poolWhere(source: GameSource): Prisma.TrackWhereInput {
   switch (source.type) {
     case "popfolk":
-      return prisma.track.findMany({ where: { ...PLAYABLE, artist: { isPopFolk: true, isActive: true } } });
+      return { ...PLAYABLE, artist: { isPopFolk: true, isActive: true } };
     case "genre":
-      return prisma.track.findMany({
-        where: { ...PLAYABLE, artist: { isActive: true, genres: { some: { genre: { slug: source.slug } } } } },
-      });
+      return { ...PLAYABLE, artist: { isActive: true, genres: { some: { genre: { slug: source.slug } } } } };
     case "artists":
-      return prisma.track.findMany({ where: { ...PLAYABLE, artistId: { in: source.ids } } });
+      return { ...PLAYABLE, artistId: { in: source.ids } };
     case "playlist":
-      return (
-        await prisma.playlistTrack.findMany({ where: { playlistId: source.id, track: PLAYABLE }, include: { track: true } })
-      ).map((pt) => pt.track);
+      return { ...PLAYABLE, playlists: { some: { playlistId: source.id } } };
   }
+}
+
+/** Всички песни от избрания източник. */
+export async function getPool(source: GameSource): Promise<Track[]> {
+  return prisma.track.findMany({ where: poolWhere(source) });
 }
 
 /** Име на източника за показване („Поп-фолк“, „Рап“, „Азис, Галена“, име на плейлист). */
