@@ -1,0 +1,29 @@
+import { timingSafeEqual } from "node:crypto";
+import type { NextRequest } from "next/server";
+import { connection } from "next/server";
+import { runSync } from "@/lib/sync/run";
+
+// Vercel Cron (vercel.json) вика този адрес веднъж дневно с „Authorization: Bearer <CRON_SECRET>“.
+// Hobby планът позволява до 60 сек. — синхронизацията спира малко преди това и продължава при следващото пускане.
+export const maxDuration = 60;
+
+function authorized(req: NextRequest): boolean {
+  const secret = process.env.CRON_SECRET?.trim();
+  const header = req.headers.get("authorization") ?? "";
+  if (!secret) return false;
+  const expected = Buffer.from(`Bearer ${secret}`);
+  const actual = Buffer.from(header);
+  return expected.length === actual.length && timingSafeEqual(expected, actual);
+}
+
+export async function GET(req: NextRequest) {
+  await connection();
+  if (!authorized(req)) return Response.json({ error: "Неоторизиран" }, { status: 401 });
+  try {
+    const summary = await runSync({ trigger: "cron", budgetMs: 25_000 });
+    return Response.json(summary);
+  } catch (error) {
+    console.error("sync-catalog", error);
+    return Response.json({ error: "Синхронизацията не успя" }, { status: 500 });
+  }
+}

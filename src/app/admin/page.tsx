@@ -42,9 +42,14 @@ async function Dashboard() {
     <div className="space-y-10">
       <div className="flex items-center justify-between">
         <h1 className="font-display text-2xl font-bold">Админ</h1>
-        <Link href="/profil" className="text-sm text-muted underline">
-          Профил
-        </Link>
+        <span className="flex gap-4 text-sm">
+          <Link href="/admin/sinhronizaciya" className="underline">
+            Синхронизация
+          </Link>
+          <Link href="/profil" className="text-muted underline">
+            Профил
+          </Link>
+        </span>
       </div>
 
       <section className="space-y-3">

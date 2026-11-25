@@ -1,5 +1,10 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "buildCommand": "npm run vercel-build",
-  "regions": ["fra1"]
+  "regions": ["fra1"],
+  "crons": [
+    { "path": "/api/cron/sync-catalog", "schedule": "0 3 * * *" },
+    { "path": "/api/cron/sync-catalog?continue=1", "schedule": "20 3 * * *" },
+    { "path": "/api/cron/sync-catalog?continue=2", "schedule": "40 3 * * *" }
+  ]
 }
