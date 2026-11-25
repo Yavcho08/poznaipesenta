@@ -11,6 +11,7 @@
     "typecheck": "tsc --noEmit",
     "db:push": "node scripts/db.mjs push",
     "db:check": "node scripts/db.mjs check",
+    "db:check-rls": "tsx scripts/check-rls.ts",
     "db:seed": "prisma db seed",
     "db:studio": "prisma studio",
     "db:migrate-data": "tsx --conditions=react-server scripts/migrate-to-supabase.ts",

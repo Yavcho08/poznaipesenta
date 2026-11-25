@@ -12,8 +12,12 @@ import { ROUND_TIME_S, roundPhase, type RoundPhase } from "@/lib/room/timeline";
 import { REACTIONS, type RoomState } from "@/lib/room/types";
 import { ClipProgress } from "../../igra/clip-progress";
 import { loadName, loadToken, saveName, saveToken } from "../room-storage";
+import { supabaseBrowser } from "@/lib/supabase/browser";
 
-const POLL_MS = 1000;
+/** Резервно питане — основният сигнал за промяна идва по Supabase Realtime (src/lib/room/realtime.ts). */
+const POLL_MS = 2500;
+/** Без Realtime (не е настроен или връзката е паднала) — както преди. */
+const POLL_FALLBACK_MS = 1000;
 const TICK_MS = 100;
 // Колко рано (ms) да насрочим откъса в Web Audio — за точен старт без закъснение от таймера.
 const SCHEDULE_AHEAD_MS = 600;
@@ -107,6 +111,7 @@ export function Room({ code }: { code: string }) {
     let stopped = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
 
+    let live = false;
     const poll = async () => {
       clearTimeout(timer);
       try {
@@ -132,13 +137,29 @@ export function Room({ code }: { code: string }) {
       } catch {
         // Мрежова грешка — пробваме пак след малко.
       }
-      if (!stopped) timer = setTimeout(poll, POLL_MS);
+      if (!stopped) timer = setTimeout(poll, live ? POLL_MS : POLL_FALLBACK_MS);
     };
     refreshRef.current = () => void poll();
     void poll();
+
+    // Realtime: сигнал „changed“ → веднага ново питане.
+    let unsubscribe: (() => void) | null = null;
+    try {
+      const supabase = supabaseBrowser();
+      const channel = supabase
+        .channel(`room:${code.toUpperCase()}`)
+        .on("broadcast", { event: "changed" }, () => void poll())
+        .subscribe((status) => {
+          live = status === "SUBSCRIBED";
+        });
+      unsubscribe = () => void supabase.removeChannel(channel);
+    } catch {
+      // Supabase не е настроен — само питане.
+    }
     return () => {
       stopped = true;
       clearTimeout(timer);
+      unsubscribe?.();
     };
   }, [code, token, loadRound]);
 

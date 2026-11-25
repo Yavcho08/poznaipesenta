@@ -57,6 +57,17 @@
 - Вносът на плейлисти е без лимит на песните; Spotify публичният линк (embed) дава само първите 100 — това е ограничение на Spotify.
 - Route handler, който чете бисквитки или трябва да е уникален при всяка заявка, започва с `await connection()` — иначе `next build` може да го пререндерира като статичен.
 
+## Етап 2 (профили, нови игри, синхронизация)
+- Вход: Supabase Auth през `@supabase/ssr`; `src/proxy.ts` опреснява сесията. `src/lib/auth/viewer.ts`: `getViewer()` (профилът се създава при първо влизане; роля admin за `ADMIN_EMAILS`), гост = httpOnly бисквитка `pp_guest`, `currentOwner()` (само в route handler/action — пише бисквитка), `mergeGuestInto(user)` след вход. `/admin` е по роля (`src/lib/admin-auth.ts`), паролата отпадна.
+- Класациите са само за профили с име (`games.user_id` + `profiles.username`); старите игри без собственик с `player_name` = архив. Гостът може да въведе име само за предизвикателството.
+- Нови игри: `src/lib/engine/` — `types.ts` (QUIZZES, общи типове), `scoring.ts` (чисто), `generators.ts` (въпроси от пула), `server.ts` (create/get/answer, дневно в `daily_challenges.payload`). Отговорът е в `game_rounds.question.answer` и не се праща, докато рундът не приключи. Корицата е пикселизирана на сървъра (`/api/quiz/.../cover` взима 6×6…56×56 от Deezer CDN) — не пращай URL на корицата преди края.
+- Постижения/XP/серии: `src/lib/achievements/` (`definitions.ts`, `progress.ts` — чисто, `server.ts` — SQL статистика, `evaluateAchievements`; вика се след всяка довършена игра и при край на стая; кешира `profiles.xp`). Статистики: `src/lib/stats/`.
+- Синхронизация: `src/lib/sync/run.ts` (курсор, бюджет ~25 сек., 4 артиста паралелно), `filters.ts` (sync_filters, дубликати, „български ли е албумът“: ISRC BG / кирилица без руски букви; RU/UA/BY/KZ ISRC = чужд изпълнител със същото име). Без компилации и без песни, на които артистът не е основен. Cron: `vercel.json` (3 пъти), `CRON_SECRET`.
+- Стаи: Supabase Realtime Broadcast (`src/lib/room/realtime.ts` → канал `room:<КОД>`, само сигнал „changed“); клиентът пита и на 2.5 сек. (1 сек. без Realtime).
+- `npm run db:check-rls` — RLS отвън (анонимен и влязъл); трябва „всичко е наред“. Supabase Security Advisor трябва да е без WARN.
+- Turbopack понякога държи стара версия на модул след добавен export („X is not a function“) → рестартирай dev сървъра.
+- Next.js 16.4.2 при `npm run dev`/`build` понякога спира с „security vulnerability … upgrade recommendation“ — второ пускане минава. Обновяване на Next още не е правено (потребителят да реши).
+
 ## Продукция (Vercel)
 - Supabase: `poznai-pesenta-dev` (локалната разработка, `.env.local`) и `poznai-pesenta-prod` (още не е създаден/свързан). Ключовете и паролите са в `.env.local` (`SUPABASE_DEV_REF`, `SUPABASE_DEV_DB_PASSWORD`, `SUPABASE_ACCESS_TOKEN`). Management API: `https://api.supabase.com/v1/...` с `SUPABASE_ACCESS_TOKEN`.
 - https://poznai-pesenta.vercel.app — Vercel проект `poznai-pesenta` (yavcho08s-projects). **Докато не превключим към Supabase prod**, продукцията е още старият код върху Neon `poznai-pesenta-db` (`DATABASE_URL`, `DATABASE_URL_UNPOOLED`) — не деплойвай новия код, преди prod базата да е готова. `ADMIN_PASSWORD`, `SPOTIFY_CLIENT_ID` и `SPOTIFY_REDIRECT_URI` (`https://poznai-pesenta.vercel.app/api/spotify/callback`) са зададени във Vercel. Spotify приложението е в Development Mode: входът работи само за акаунти, добавени в Spotify Dashboard → User Management (до 5); всички песни — само от собствени/съвместни плейлисти, чуждите минават през embed (до 100).

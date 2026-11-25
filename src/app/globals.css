@@ -182,3 +182,16 @@ select optgroup {
     animation-duration: 0.01s;
   }
 }
+
+/* Видим фокус при работа с клавиатура (без пръстен при клик с мишка/докосване). */
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-rise,
+  .animate-pulse-ring {
+    animation: none;
+  }
+}

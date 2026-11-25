@@ -1,4 +1,5 @@
 import type { NextRequest } from "next/server";
+import { notifyRoom } from "@/lib/room/realtime";
 import { handleRoom, roomToken } from "@/lib/room/http";
 import { rematch, RoomError } from "@/lib/room/server";
 
@@ -8,6 +9,8 @@ export async function POST(req: NextRequest, ctx: RouteContext<"/api/rooms/[code
     const { code } = await ctx.params;
     const token = roomToken(req);
     if (!token) throw new RoomError("Не си в тази стая", 403);
-    return Response.json(await rematch(code, token), { status: 201 });
+    const next = await rematch(code, token);
+    notifyRoom(code);
+    return Response.json(next, { status: 201 });
   });
 }

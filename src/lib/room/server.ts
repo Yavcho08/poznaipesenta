@@ -1,5 +1,6 @@
 import "server-only";
 import { evaluateAchievements } from "@/lib/achievements/server";
+import { notifyRoom } from "@/lib/room/realtime";
 import { randomBytes, randomInt } from "node:crypto";
 import { getTrack } from "@/lib/deezer";
 import { LAST_STEP, pointsForStep, ROUNDS_PER_GAME, type Answer } from "@/lib/game/rules";
@@ -149,15 +150,17 @@ async function advance(room: Room): Promise<Room> {
     });
     // Само заявката, която е приключила стаята: постижения за влезлите играчи (стаи, победа).
     if (count > 0) {
+      notifyRoom(room.code);
       const users = await prisma.roomPlayer.findMany({ where: { roomId: room.id, userId: { not: null } }, select: { userId: true } });
       await Promise.all(users.map((u) => evaluateAchievements({ userId: u.userId as string }).catch(() => [])));
     }
   } else {
     const nextStart = Math.max(end + REVEAL_S * 1000, now + MIN_LEAD_MS);
-    await prisma.room.updateMany({
+    const moved = await prisma.room.updateMany({
       where: { id: room.id, roundIndex: room.roundIndex },
       data: { roundIndex: room.roundIndex + 1, roundStartAt: new Date(nextStart), roundEndAt: null },
     });
+    if (moved.count > 0) notifyRoom(room.code);
   }
   return prisma.room.findUniqueOrThrow({ where: { id: room.id } });
 }
@@ -370,10 +373,11 @@ async function endRoundIfAllDone(room: Room, now: number): Promise<void> {
   const byPlayer = new Map<string, { correct: boolean }[]>();
   for (const m of moves) byPlayer.set(m.playerId, [...(byPlayer.get(m.playerId) ?? []), m]);
   if (online.length > 0 && online.every((p) => isPlayerDone(byPlayer.get(p.id) ?? []))) {
-    await prisma.room.updateMany({
+    const ended = await prisma.room.updateMany({
       where: { id: room.id, roundIndex: room.roundIndex, roundEndAt: null },
       data: { roundEndAt: new Date(now) },
     });
+    if (ended.count > 0) notifyRoom(room.code);
   }
 }
 /** Песента за аудиото на рунд — само текущия и следващия (за предварително зареждане). */

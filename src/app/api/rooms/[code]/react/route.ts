@@ -1,4 +1,5 @@
 import type { NextRequest } from "next/server";
+import { notifyRoom } from "@/lib/room/realtime";
 import { clientIp, rateLimit, tooManyRequests } from "@/lib/rate-limit";
 import { handleRoom, jsonBody, roomToken, str } from "@/lib/room/http";
 import { reactInRoom, RoomError } from "@/lib/room/server";
@@ -11,6 +12,7 @@ export async function POST(req: NextRequest, ctx: RouteContext<"/api/rooms/[code
     const token = roomToken(req);
     if (!token) throw new RoomError("Не си в тази стая", 403);
     await reactInRoom(code, token, str((await jsonBody(req)).emoji));
+    notifyRoom(code);
     return Response.json({ ok: true });
   });
 }
