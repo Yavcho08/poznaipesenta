@@ -5,36 +5,49 @@ import { cleanPlayerName, rankBest, rankOf, type RankedEntry, type ScoreEntry } 
 import { createSession, describeSource, GameError } from "@/lib/game/server";
 import { parseSource } from "@/lib/game/source";
 import { prisma } from "@/lib/prisma";
-import type { Track } from "@/generated/prisma/client";
+import { getViewer, type Owner } from "@/lib/auth/viewer";
+import type { Prisma, Track } from "@/generated/prisma/client";
 
 const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
 const CODE_ALPHABET = "abcdefghjkmnpqrstuvwxyz23456789";
 
-// --- Име в класацията ---
+// --- Място в класацията ---
+// В класациите участват само влезли потребители (с име). Гостът може да въведе име само за
+// „Предизвикай приятел“ (приятелят вижда от кого е) — то не влиза в класациите.
 
-export interface NameResult {
-  name: string;
-  /** Място в класацията, в която участва играта (седмица за източника / днешното дневно). */
-  rank: number | null;
-  board: Board;
-}
+export type Standing =
+  | { kind: "ranked"; name: string; rank: number | null; board: Board }
+  | { kind: "no_username" }
+  | { kind: "guest"; name: string | null };
 
-export async function setPlayerName(sessionId: string, rawName: string): Promise<NameResult> {
-  const name = cleanPlayerName(rawName);
-  if (!name) throw new GameError("Въведи име");
+export async function getStanding(sessionId: string, rawGuestName?: string): Promise<Standing> {
   const session = await prisma.game.findUnique({ where: { id: sessionId } });
   if (!session?.finishedAt) throw new GameError("Играта още не е свършила", 409);
-  await prisma.game.update({ where: { id: sessionId }, data: { playerName: name } });
-
-  const board = boardFor(session.sourceType, session.sourceRef);
-  const entries = await loadEntries(board);
-  return { name, rank: rankOf(entries, name), board };
+  const viewer = await getViewer();
+  if (viewer && session.userId === viewer.userId) {
+    const name = viewer.profile.username;
+    if (!name) return { kind: "no_username" };
+    const board = boardFor(session.sourceType, session.sourceRef);
+    return { kind: "ranked", name, rank: rankOf(await loadEntries(board), name), board };
+  }
+  const name = rawGuestName === undefined ? null : cleanPlayerName(rawGuestName);
+  if (name && !session.userId) await prisma.game.update({ where: { id: sessionId }, data: { playerName: name } });
+  return { kind: "guest", name: name ?? session.playerName };
 }
 
 // --- Класации ---
 
-/** daily — днешното (или дадената дата); week — последните 7 дни, по желание само за един източник. */
-export type Board = { kind: "daily"; date: string } | { kind: "week"; sourceRef: string | null };
+/**
+ * daily — днешното (или дадената дата); week/month — последните 7/30 дни (по желание за един източник);
+ * archive — старите резултати по име отпреди профилите.
+ */
+export type Board =
+  | { kind: "daily"; date: string }
+  | { kind: "week"; sourceRef: string | null }
+  | { kind: "month"; sourceRef: string | null }
+  | { kind: "archive" };
+
+const MONTH_MS = 30 * 24 * 60 * 60 * 1000;
 
 function boardFor(sourceType: string | null, sourceRef: string | null): Board {
   if (sourceType === "daily" && sourceRef) return { kind: "daily", date: sourceRef };
@@ -42,24 +55,35 @@ function boardFor(sourceType: string | null, sourceRef: string | null): Board {
 }
 
 async function loadEntries(board: Board): Promise<ScoreEntry[]> {
+  if (board.kind === "archive") {
+    const rows = await prisma.game.findMany({
+      where: { userId: null, guestId: null, playerName: { not: null }, finishedAt: { not: null }, gameType: "listen" },
+      orderBy: { total: "desc" },
+      take: 1000,
+      select: { playerName: true, total: true, finishedAt: true, createdAt: true },
+    });
+    return rows.map((r) => ({ name: r.playerName ?? "", total: r.total, at: (r.finishedAt ?? r.createdAt).getTime() }));
+  }
+  const period: Prisma.GameWhereInput =
+    board.kind === "daily"
+      ? { sourceType: "daily", sourceRef: board.date }
+      : {
+          // Предизвикателствата повтарят чужди песни, а дневното си има своя класация.
+          sourceType: { notIn: ["daily", "challenge"] },
+          ...(board.sourceRef ? { sourceRef: board.sourceRef } : {}),
+        };
   const rows = await prisma.game.findMany({
     where: {
-      playerName: { not: null },
-      finishedAt: { not: null },
-      ...(board.kind === "daily"
-        ? { sourceType: "daily", sourceRef: board.date }
-        : {
-            finishedAt: { gte: new Date(Date.now() - WEEK_MS) },
-            // Предизвикателствата повтарят чужди песни, а дневното си има своя класация.
-            sourceType: { notIn: ["daily", "challenge"] },
-            ...(board.sourceRef ? { sourceRef: board.sourceRef } : {}),
-          }),
+      ...period,
+      finishedAt: { not: null, ...(board.kind === "daily" ? {} : { gte: new Date(Date.now() - (board.kind === "month" ? MONTH_MS : WEEK_MS)) }) },
+      gameType: "listen",
+      user: { username: { not: null } },
     },
     orderBy: { total: "desc" },
-    take: 1000,
-    select: { playerName: true, total: true, finishedAt: true, createdAt: true },
+    take: 2000,
+    select: { total: true, finishedAt: true, createdAt: true, user: { select: { username: true } } },
   });
-  return rows.map((r) => ({ name: r.playerName ?? "", total: r.total, at: (r.finishedAt ?? r.createdAt).getTime() }));
+  return rows.map((r) => ({ name: r.user?.username ?? "", total: r.total, at: (r.finishedAt ?? r.createdAt).getTime() }));
 }
 
 export async function getLeaderboard(board: Board, limit = 20): Promise<RankedEntry[]> {
@@ -77,7 +101,8 @@ export async function weeklySources(): Promise<{ sourceRef: string; label: strin
     where: {
       finishedAt: { gte: new Date(Date.now() - WEEK_MS) },
       sourceType: { notIn: ["daily", "challenge"] },
-      playerName: { not: null },
+      gameType: "listen",
+      user: { username: { not: null } },
     },
     _count: { _all: true },
   });
@@ -130,7 +155,7 @@ export interface ChallengeInfo {
 export async function getChallenge(code: string): Promise<ChallengeInfo> {
   const session = await prisma.game.findUnique({
     where: { challengeCode: code },
-    include: { rounds: { orderBy: { index: "asc" } } },
+    include: { rounds: { orderBy: { index: "asc" } }, user: { select: { username: true } } },
   });
   if (!session?.finishedAt) throw new GameError("Предизвикателството не е намерено", 404);
   let label = "";
@@ -145,7 +170,7 @@ export async function getChallenge(code: string): Promise<ChallengeInfo> {
   }
   return {
     code,
-    name: session.playerName ?? "Приятел",
+    name: session.user?.username ?? session.playerName ?? "Приятел",
     total: session.total,
     label,
     rounds: session.rounds.map((r) => ({ points: r.points, solvedAtStep: r.solvedStep })),
@@ -153,14 +178,14 @@ export async function getChallenge(code: string): Promise<ChallengeInfo> {
 }
 
 /** Нова игра със същите песни в същия ред. */
-export async function createChallengeGame(code: string): Promise<string> {
+export async function createChallengeGame(code: string, owner: Owner): Promise<string> {
   const session = await prisma.game.findUnique({
     where: { challengeCode: code },
     include: { rounds: { orderBy: { index: "asc" }, include: { track: true } } },
   });
   if (!session) throw new GameError("Предизвикателството не е намерено", 404);
   const tracks: Track[] = session.rounds.flatMap((r) => (r.track ? [r.track] : []));
-  return createSession({ sourceType: "challenge", sourceRef: code }, tracks);
+  return createSession({ sourceType: "challenge", sourceRef: code }, tracks, owner);
 }
 
 export function isChallengeCode(value: string): boolean {

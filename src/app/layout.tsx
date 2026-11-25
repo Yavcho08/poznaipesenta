@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import Link from "next/link";
 import { Geist, Unbounded } from "next/font/google";
 import { SiteNav } from "./nav";
+import { UserChip } from "./user-chip";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -47,7 +48,10 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
         <header className="sticky top-0 z-30 border-b border-line bg-background/70 pt-[env(safe-area-inset-top)] backdrop-blur-lg">
           <div className="mx-auto flex max-w-3xl items-center justify-between gap-3 px-4 py-3">
             <Logo />
-            <SiteNav />
+            <div className="flex items-center gap-2">
+              <SiteNav />
+              <UserChip />
+            </div>
           </div>
         </header>
         <main className="mx-auto w-full max-w-3xl flex-1 px-4 py-6 sm:py-10">{children}</main>

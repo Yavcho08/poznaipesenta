@@ -5,6 +5,7 @@ import { ROUNDS_PER_GAME } from "@/lib/game/rules";
 import { createSession, GameError, getPool, pickPlayableTracks } from "@/lib/game/server";
 import { prisma } from "@/lib/prisma";
 import type { Track } from "@/generated/prisma/client";
+import { ownerWhere, type Owner } from "@/lib/auth/viewer";
 
 /**
  * Песните за деня — едни и същи за всички. Избират се веднъж (първата заявка за деня)
@@ -31,9 +32,16 @@ async function dailyTracks(date: string): Promise<Track[]> {
   return ids.map((id) => byId.get(id)).filter((t): t is Track => t !== undefined);
 }
 
-export async function createDailyGame(): Promise<{ id: string; date: string }> {
+/** Днешната игра на играча: една на ден — ако вече е започната (на което и да е устройство), продължава тя. */
+export async function createDailyGame(owner: Owner): Promise<{ id: string; date: string }> {
   const date = todayInSofia();
+  const existing = await prisma.game.findFirst({
+    where: { ...ownerWhere(owner), mode: "daily", gameType: "listen", sourceRef: date },
+    orderBy: { createdAt: "asc" },
+    select: { id: true },
+  });
+  if (existing) return { id: existing.id, date };
   const tracks = await dailyTracks(date);
   if (tracks.length < ROUNDS_PER_GAME) throw new GameError("Днешното предизвикателство не е налично", 503);
-  return { id: await createSession({ sourceType: "daily", sourceRef: date }, tracks), date };
+  return { id: await createSession({ sourceType: "daily", sourceRef: date }, tracks, owner), date };
 }

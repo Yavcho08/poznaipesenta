@@ -1,3 +1,4 @@
+import { getViewer } from "@/lib/auth/viewer";
 import type { Metadata } from "next";
 import { Suspense } from "react";
 import { connection } from "next/server";
@@ -46,5 +47,6 @@ async function Entry() {
     })),
   ].filter((o) => o.count >= ROUNDS_PER_GAME);
 
-  return <RoomEntry options={options} />;
+  const viewer = await getViewer();
+  return <RoomEntry options={options} defaultName={viewer?.profile.username} />;
 }

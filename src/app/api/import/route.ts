@@ -1,4 +1,5 @@
 import type { NextRequest } from "next/server";
+import { clientIp, rateLimit, tooManyRequests } from "@/lib/rate-limit";
 import { ImportError, parseImportRequest, prepareImport, type ImportEvent } from "@/lib/import/run";
 import { SpotifyApiError } from "@/lib/import/spotify-api";
 import { SpotifyEmbedError } from "@/lib/import/spotify-embed";
@@ -9,6 +10,7 @@ export const maxDuration = 300;
 
 // Внос на плейлист. Отговорът е NDJSON поток: по един ImportEvent на ред (прогрес на живо).
 export async function POST(req: NextRequest) {
+  if (!rateLimit(`import:${clientIp(req)}`, 10, 60_000)) return tooManyRequests();
   const request = parseImportRequest(await req.json().catch(() => null));
   if (!request) return Response.json({ error: "Невалидна заявка" }, { status: 400 });
 

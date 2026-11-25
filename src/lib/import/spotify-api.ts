@@ -102,6 +102,11 @@ async function tokenRequest(body: Record<string, string>): Promise<TokenResponse
   return (await res.json()) as TokenResponse;
 }
 
+/** Токен от входа със Spotify през Supabase (без refresh — след час се свързва пак през /vnos). */
+export async function saveSpotifyAccessToken(access: string, expiresInS: number): Promise<void> {
+  await saveToken({ access_token: access, expires_in: expiresInS }, null);
+}
+
 export async function finishLogin(code: string, state: string): Promise<void> {
   const cfg = config();
   if (!cfg) throw new SpotifyApiError("Spotify не е настроен.", 500);

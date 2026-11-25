@@ -2,7 +2,7 @@
 
 import { refresh } from "next/cache";
 import { getTrack, isDeezerId } from "@/lib/deezer";
-import { logIn, logOut, requireAdmin } from "@/lib/admin-auth";
+import { requireAdmin } from "@/lib/admin-auth";
 import { findArtist, importArtist, latinName, type ArtistCandidate } from "@/lib/import-artist";
 import { transliterate } from "@/lib/normalize";
 import { prisma } from "@/lib/prisma";
@@ -16,23 +16,6 @@ export interface ActionResult {
 function text(form: FormData, key: string): string {
   const value = form.get(key);
   return typeof value === "string" ? value.trim() : "";
-}
-
-// --- Вход ---
-
-export async function loginAction(_prev: ActionResult | null, form: FormData): Promise<ActionResult> {
-  if (await logIn(text(form, "password"))) {
-    refresh();
-    return { ok: true, message: "" };
-  }
-  // Малко забавяне срещу налучкване.
-  await new Promise((r) => setTimeout(r, 600));
-  return { ok: false, message: "Грешна парола" };
-}
-
-export async function logoutAction(): Promise<void> {
-  await logOut();
-  refresh();
 }
 
 // --- Артисти ---

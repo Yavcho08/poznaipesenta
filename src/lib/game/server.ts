@@ -6,6 +6,7 @@ import { isSameSong, songKey } from "@/lib/normalize";
 import type { Prisma, Track } from "@/generated/prisma/client";
 import { parseSource, type GameSource } from "@/lib/game/source";
 import { formatDate } from "@/lib/game/daily-shared";
+import { ownerWhere, type Owner } from "@/lib/auth/viewer";
 import {
   isRoundDone,
   pointsForStep,
@@ -116,7 +117,7 @@ export async function pickPlayableTracks(pool: Track[], count: number, random = 
   return picked;
 }
 
-export async function createGame(source: GameSource): Promise<string> {
+export async function createGame(source: GameSource, owner: Owner): Promise<string> {
   const pool = await getPool(source);
   const picked = await pickPlayableTracks(pool, ROUNDS_PER_GAME);
 
@@ -127,7 +128,7 @@ export async function createGame(source: GameSource): Promise<string> {
     );
   }
 
-  return createSession({ sourceType: source.type, sourceRef: JSON.stringify(source) }, picked);
+  return createSession({ sourceType: source.type, sourceRef: JSON.stringify(source) }, picked, owner);
 }
 
 /** daily/challenge са отделни режими; всичко останало е свободна игра. */
@@ -135,10 +136,15 @@ function modeOf(sourceType: string): "free" | "daily" | "challenge" {
   return sourceType === "daily" || sourceType === "challenge" ? sourceType : "free";
 }
 
-export async function createSession(meta: { sourceType: string; sourceRef: string }, tracks: Track[]): Promise<string> {
+export async function createSession(
+  meta: { sourceType: string; sourceRef: string },
+  tracks: Track[],
+  owner: Owner,
+): Promise<string> {
   const game = await prisma.game.create({
     data: {
       ...meta,
+      ...ownerWhere(owner),
       gameType: "listen",
       mode: modeOf(meta.sourceType),
       rounds: {
@@ -199,8 +205,11 @@ async function sessionLabel(sourceType: string | null, sourceRef: string | null)
   if (sourceType === "daily") return `Дневно предизвикателство · ${formatDate(sourceRef)}`;
   if (sourceType === "challenge") {
     // sourceRef = кодът на предизвикателството; името е на този, който предизвиква.
-    const original = await prisma.game.findUnique({ where: { challengeCode: sourceRef } });
-    const name = original?.playerName ?? "приятел";
+    const original = await prisma.game.findUnique({
+      where: { challengeCode: sourceRef },
+      include: { user: { select: { username: true } } },
+    });
+    const name = original?.user?.username ?? original?.playerName ?? "приятел";
     const base = original && original.sourceType !== "challenge" ? await sessionLabel(original.sourceType, original.sourceRef) : "";
     return base ? `Предизвикателство от ${name} · ${base}` : `Предизвикателство от ${name}`;
   }

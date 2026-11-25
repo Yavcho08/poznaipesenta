@@ -26,7 +26,7 @@ async function post<T>(url: string, body: unknown): Promise<T> {
   return data as T;
 }
 
-export function RoomEntry({ options }: { options: SourceOption[] }) {
+export function RoomEntry({ options, defaultName }: { options: SourceOption[]; defaultName?: string | null }) {
   const router = useRouter();
   const [name, setName] = useState("");
   const [sourceIndex, setSourceIndex] = useState(0);
@@ -37,7 +37,7 @@ export function RoomEntry({ options }: { options: SourceOption[] }) {
 
   // localStorage е достъпен само в браузъра.
   // eslint-disable-next-line react-hooks/set-state-in-effect -- еднократно зареждане на запомненото име
-  useEffect(() => setName(loadName()), []);
+  useEffect(() => setName(loadName() || defaultName || ""), [defaultName]);
 
   const enter = (room: { code: string; token: string }) => {
     saveToken(room.code, room.token);

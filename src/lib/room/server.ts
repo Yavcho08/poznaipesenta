@@ -68,6 +68,7 @@ export async function createRoom(
   source: GameSource,
   hostName: string,
   roundCount: number = ROUNDS_PER_GAME,
+  userId: string | null = null,
 ): Promise<{ code: string; token: string }> {
   const name = cleanName(hostName);
   const count = (ROOM_ROUND_OPTIONS as readonly number[]).includes(roundCount) ? roundCount : ROUNDS_PER_GAME;
@@ -87,7 +88,7 @@ export async function createRoom(
         source: JSON.stringify(source),
         label,
         rounds: { create: tracks.map((t, index) => ({ index, trackId: t.id })) },
-        players: { create: { name, token } },
+        players: { create: { name, token, userId } },
       },
       include: { players: true },
     });
@@ -97,7 +98,7 @@ export async function createRoom(
   throw new RoomError("Не успях да създам стая. Опитай пак.", 500);
 }
 
-export async function joinRoom(code: string, playerName: string): Promise<{ code: string; token: string }> {
+export async function joinRoom(code: string, playerName: string, userId: string | null = null): Promise<{ code: string; token: string }> {
   const room = await findRoom(code);
   const name = cleanName(playerName);
   if (room.status === "finished") throw new RoomError("Играта в тази стая вече свърши");
@@ -107,7 +108,7 @@ export async function joinRoom(code: string, playerName: string): Promise<{ code
     throw new RoomError("Това име е заето в стаята — избери друго");
   }
   const token = newToken();
-  await prisma.roomPlayer.create({ data: { roomId: room.id, name, token } });
+  await prisma.roomPlayer.create({ data: { roomId: room.id, name, token, userId } });
   return { code: room.code, token };
 }
 

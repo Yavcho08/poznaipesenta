@@ -1,16 +1,25 @@
+import Link from "next/link";
 import type { ReactNode } from "react";
-import { adminConfigured, isAdmin } from "@/lib/admin-auth";
-import { LoginForm } from "./client";
+import { isAdmin } from "@/lib/admin-auth";
+import { getViewer } from "@/lib/auth/viewer";
 
-/** Показва съдържанието само на влязъл админ; иначе — форма за вход. */
+/** Показва съдържанието само на админ (по роля в профила). */
 export async function AdminGate({ children }: { children: () => Promise<ReactNode> }) {
-  if (!adminConfigured()) {
-    return (
-      <p className="rounded-lg bg-surface p-4 text-sm text-muted">
-        Админ панелът е изключен. Задай <code>ADMIN_PASSWORD</code> в <code>.env</code> и рестартирай сървъра.
-      </p>
-    );
-  }
-  if (!(await isAdmin())) return <LoginForm />;
-  return <>{await children()}</>;
+  if (await isAdmin()) return <>{await children()}</>;
+  const viewer = await getViewer();
+  return (
+    <div className="card mx-auto max-w-sm space-y-3 p-6 text-center">
+      <h1 className="font-display text-xl font-bold">Админ</h1>
+      {viewer ? (
+        <p className="text-sm text-muted">Профилът ти няма админ права.</p>
+      ) : (
+        <>
+          <p className="text-sm text-muted">Влез с администраторския си профил.</p>
+          <Link href="/vhod?next=/admin" className="btn-primary w-full">
+            Вход
+          </Link>
+        </>
+      )}
+    </div>
+  );
 }

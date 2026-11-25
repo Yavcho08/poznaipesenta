@@ -1,4 +1,5 @@
 import type { NextRequest } from "next/server";
+import { clientIp, rateLimit, tooManyRequests } from "@/lib/rate-limit";
 import { isDeezerId } from "@/lib/deezer";
 import { handle, parseRoundIndex } from "@/lib/game/http";
 import { GameError, playMove, type Move } from "@/lib/game/server";
@@ -18,6 +19,7 @@ function parseMove(body: unknown): Move {
 
 // Ход в рунда: избрана песен или „Пропусни“.
 export async function POST(req: NextRequest, ctx: RouteContext<"/api/game/[id]/rounds/[index]">) {
+  if (!rateLimit(`move:${clientIp(req)}`, 120, 60_000)) return tooManyRequests();
   return handle(async () => {
     const { id, index } = await ctx.params;
     const move = parseMove(await req.json().catch(() => null));

@@ -8,6 +8,7 @@ import type { RankedEntry } from "@/lib/game/leaderboard";
 import { LAST_STEP, ROUNDS_PER_GAME, POINTS, STEPS, type GameView } from "@/lib/game/rules";
 import { finale } from "@/lib/effects";
 import { loadName, saveName } from "@/lib/player-name";
+import type { Standing } from "@/lib/game/social";
 import { StepSquares } from "./step-squares";
 
 function verdict(ratio: number): string {
@@ -86,7 +87,7 @@ export function Results({
 
       {challengeCode && <ChallengeComparison code={challengeCode} game={game} />}
 
-      <NameForm gameId={game.id} daily={Boolean(shareDate)} />
+      <StandingCard gameId={game.id} daily={Boolean(shareDate)} />
 
       {shareDate ? <DailyPanel game={game} date={shareDate} /> : <ChallengeButton game={game} />}
 
@@ -129,64 +130,95 @@ export function Results({
   );
 }
 
-// --- Име и място в класацията ---
+// --- Място в класацията ---
 
-function NameForm({ gameId, daily }: { gameId: string; daily: boolean }) {
+function StandingCard({ gameId, daily }: { gameId: string; daily: boolean }) {
+  const [standing, setStanding] = useState<Standing | null>(null);
   const [name, setName] = useState("");
-  const [status, setStatus] = useState<{ ok: boolean; text: string } | null>(null);
   const [busy, setBusy] = useState(false);
-  const autoSent = useRef(false);
+  const [error, setError] = useState<string | null>(null);
+  const loaded = useRef(false);
 
-  const submit = async (value: string) => {
+  const load = async (guestName?: string) => {
     setBusy(true);
+    setError(null);
     try {
-      const r = await post<{ name: string; rank: number | null }>(`/api/game/${gameId}/name`, { name: value });
-      saveName(r.name);
-      setName(r.name);
-      const where = daily ? "в днешното дневно" : "тази седмица";
-      setStatus({ ok: true, text: r.rank ? `Ти си №${r.rank} ${where}!` : "Записано в класацията." });
+      const s = await post<Standing>(`/api/game/${gameId}/name`, guestName === undefined ? {} : { name: guestName });
+      setStanding(s);
+      if (s.kind === "guest" && s.name) {
+        setName(s.name);
+        saveName(s.name);
+      }
     } catch (e) {
-      setStatus({ ok: false, text: e instanceof Error ? e.message : "Грешка" });
+      setError(e instanceof Error ? e.message : "Грешка");
     } finally {
       setBusy(false);
     }
   };
 
-  // Запомнено име → записваме автоматично (без да питаме всеки път).
   useEffect(() => {
+    if (loaded.current) return;
+    loaded.current = true;
     const saved = loadName();
-    if (!saved || autoSent.current) return;
-    autoSent.current = true;
-    setName(saved);
-    void submit(saved);
-    // submit е стабилна по смисъл; пускаме само веднъж при показване.
+    void load(saved || undefined);
+    // load е стабилна по смисъл; пускаме само веднъж при показване.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  return (
-    <form
-      className="card space-y-2 p-4"
-      onSubmit={(e) => {
-        e.preventDefault();
-        if (name.trim()) void submit(name);
-      }}
-    >
-      <p className="text-sm font-semibold">🏆 Класация</p>
-      <div className="flex gap-2">
-        <input
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          maxLength={20}
-          placeholder="Твоето име"
-          aria-label="Име за класацията"
-          className="field py-2"
-        />
-        <button type="submit" disabled={busy || !name.trim()} className="btn-primary shrink-0 px-5 py-2">
-          Запази
-        </button>
+  const where = daily ? "в днешното дневно" : "тази седмица";
+  const next = typeof window === "undefined" ? "/" : window.location.pathname + window.location.search;
+
+  if (standing?.kind === "ranked") {
+    return (
+      <div className="card p-4 text-center">
+        <p className="text-sm text-muted">🏆 Класация · {standing.name}</p>
+        <p className="font-display text-xl font-bold">{standing.rank ? `№${standing.rank} ${where}` : "Записано"}</p>
       </div>
-      {status && <p className={`text-sm ${status.ok ? "text-emerald-300" : "text-red-300"}`}>{status.text}</p>}
-    </form>
+    );
+  }
+  if (standing?.kind === "no_username") {
+    return (
+      <div className="card space-y-2 p-4 text-center">
+        <p className="text-sm">Избери си име, за да влезеш в класацията.</p>
+        <Link href="/profil" className="btn-primary w-full">
+          Избери име
+        </Link>
+      </div>
+    );
+  }
+  return (
+    <div className="card space-y-3 p-4">
+      <div className="space-y-2 text-center">
+        <p className="text-sm font-semibold">🏆 Влез, за да влезе резултатът в класацията</p>
+        <Link href={`/vhod?next=${encodeURIComponent(next)}`} className="btn-primary w-full">
+          Вход / Регистрация
+        </Link>
+        <p className="text-xs text-muted">Тази игра (и всички досегашни на това устройство) минават в профила ти.</p>
+      </div>
+      <form
+        className="space-y-1 border-t border-line pt-3"
+        onSubmit={(e) => {
+          e.preventDefault();
+          if (name.trim()) void load(name);
+        }}
+      >
+        <p className="text-xs text-muted">Име за „Предизвикай приятел“ (без вход)</p>
+        <div className="flex gap-2">
+          <input
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            maxLength={20}
+            placeholder="Твоето име"
+            aria-label="Име за предизвикателството"
+            className="field py-2"
+          />
+          <button type="submit" disabled={busy || !name.trim()} className="btn-ghost shrink-0 px-5 py-2">
+            Запази
+          </button>
+        </div>
+      </form>
+      {error && <p className="text-sm text-red-300">{error}</p>}
+    </div>
   );
 }
 

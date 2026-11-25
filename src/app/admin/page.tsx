@@ -6,7 +6,6 @@ import {
   deleteArtistAction,
   deleteGenreAction,
   deletePlaylistAction,
-  logoutAction,
   refreshArtistAction,
   setArtistGenresAction,
   togglePopFolkAction,
@@ -43,11 +42,9 @@ async function Dashboard() {
     <div className="space-y-10">
       <div className="flex items-center justify-between">
         <h1 className="font-display text-2xl font-bold">Админ</h1>
-        <form action={logoutAction}>
-          <button type="submit" className="text-sm text-muted underline">
-            Изход
-          </button>
-        </form>
+        <Link href="/profil" className="text-sm text-muted underline">
+          Профил
+        </Link>
       </div>
 
       <section className="space-y-3">

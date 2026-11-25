@@ -8,7 +8,6 @@ import {
   createPlaylistAction,
   findArtistCandidates,
   importArtistAction,
-  loginAction,
   type ActionResult,
   type CandidatesResult,
 } from "./actions";
@@ -19,20 +18,6 @@ const primary = "btn-primary py-2";
 function Message({ result }: { result: ActionResult | null }) {
   if (!result?.message) return null;
   return <p className={`text-sm ${result.ok ? "text-green-300" : "text-red-300"}`}>{result.message}</p>;
-}
-
-export function LoginForm() {
-  const [state, action, pending] = useActionState(loginAction, null);
-  return (
-    <form action={action} className="mx-auto max-w-sm space-y-3 rounded-xl bg-surface p-6">
-      <h1 className="font-display text-xl font-bold">Админ</h1>
-      <input name="password" type="password" placeholder="Парола" autoFocus required className={input} />
-      <button type="submit" disabled={pending} className={primary}>
-        Вход
-      </button>
-      <Message result={state} />
-    </form>
-  );
 }
 
 /** Бутон, който иска потвърждение преди да изпрати действието. */
