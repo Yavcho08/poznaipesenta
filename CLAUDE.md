@@ -68,6 +68,9 @@
 - Turbopack понякога държи стара версия на модул след добавен export („X is not a function“) → рестартирай dev сървъра.
 - Next.js е 16.4.6 (16.4.2 имаше уязвимости и спираше dev/build със съобщение за обновяване).
 
+- YouTube гледания: `src/lib/youtube.ts` (официалното Data API, `YOUTUBE_API_KEY`), съпоставяне в `youtube-match.ts` (без кавъри/live/караоке/текст/миксове). Квота 10 000/ден: търсене = 101 → ~90 песни на ден (поп-фолкът по rank първо), гледанията се опресняват на 7 дни (50 на единица). Cron `/api/cron/youtube` ×4 сутрин; на ръка `npm run youtube:sync`. „Коя е по-популярна?“ ползва YouTube, ако ≥24 песни от пула имат гледания, иначе Deezer rank (никога смесено). Чуждите песни не се търсят преди поп-фолка. Spotify не дава слушания през официалното API — не четем страниците им.
+- Хронология: точки само за песен на точното ѝ място (`orderPlacement`), не по двойки.
+
 ## Продукция (Vercel)
 - **Една Supabase база** `poznai-pesenta` (ref в `.env.local` като `SUPABASE_DEV_REF`) служи и за продукцията, и за локалната разработка — безплатният план не позволи втори проект (лимитът остана достигнат дори след изтриване на друг проект). Внимавай с тестови данни: трий ги след тестове; не пускай разрушителни скриптове.
 - https://poznai-pesenta.vercel.app — Vercel проект `poznai-pesenta` (yavcho08s-projects). Production env: `DATABASE_URL`, `DIRECT_URL`, `NEXT_PUBLIC_SUPABASE_*`, `SUPABASE_SECRET_KEY`, `CRON_SECRET`, `ADMIN_EMAILS`, `NEXT_PUBLIC_ENABLE_SPOTIFY_LOGIN`, `SPOTIFY_*`. Старите Neon променливи (`DATABASE_URL_UNPOOLED`, `PG*`, `POSTGRES_*`) и `ADMIN_PASSWORD` са останали, но не се ползват. Новите променливи са „sensitive“ — `vercel env pull` ги връща празни; провери с `vercel env ls production`.

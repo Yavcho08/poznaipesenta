@@ -3,6 +3,7 @@ import "server-only";
 // по is_active) и генератор на случайни числа (детерминиран за дневното).
 
 import { cleanTitle, looseKey, songKey } from "@/lib/normalize";
+import { formatViews } from "@/lib/youtube-match";
 import type { Album, Artist, Track, TrackArtist } from "@/generated/prisma/client";
 import { STREAK_MAX } from "./scoring";
 import type { Option, QuizType, SongCard, StoredQuestion } from "./types";
@@ -159,12 +160,28 @@ function coverRounds(pool: PoolTrack[], random: Random): RoundSpec[] {
   });
 }
 
-function pairRounds(type: "newer" | "higher", pool: PoolTrack[], random: Random): RoundSpec[] {
+type PairMetric = "year" | "youtube" | "deezer";
+
+/** „По-популярна“: по гледания в YouTube, ако са известни за достатъчно песни; иначе по класацията на Deezer. */
+function higherRounds(pool: PoolTrack[], random: Random): RoundSpec[] {
+  const withViews = uniqueSongs(pool).filter((t) => (t.youtubeViews ?? 0) > 0).length;
+  if (withViews >= 24) {
+    try {
+      return pairRounds("youtube", pool, random);
+    } catch (error) {
+      if (!(error instanceof NotEnoughData)) throw error;
+    }
+  }
+  return pairRounds("deezer", pool, random);
+}
+
+function pairRounds(metric: PairMetric, pool: PoolTrack[], random: Random): RoundSpec[] {
+  const type = metric === "year" ? "newer" : "higher";
+  const value = (t: PoolTrack) => (metric === "year" ? (t.releaseYear ?? 0) : metric === "youtube" ? (t.youtubeViews ?? 0) : t.rank);
   const songs = shuffle(
-    uniqueSongs(pool).filter((t) => (type === "newer" ? t.releaseYear !== null : t.rank > 0)),
+    uniqueSongs(pool).filter((t) => (metric === "year" ? t.releaseYear !== null : value(t) > 0)),
     random,
   );
-  const value = (t: PoolTrack) => (type === "newer" ? (t.releaseYear ?? 0) : t.rank);
   const clearlyDifferent = (a: PoolTrack, b: PoolTrack) =>
     type === "newer" ? Math.abs(value(a) - value(b)) >= 2 : Math.max(value(a), value(b)) >= 1.5 * Math.min(value(a), value(b));
 
@@ -179,13 +196,14 @@ function pairRounds(type: "newer" | "higher", pool: PoolTrack[], random: Random)
     used.add(b.id);
     const [left, right] = random() < 0.5 ? [a, b] : [b, a];
     const correct = value(left) > value(right) ? "left" : "right";
-    const fmt = (t: PoolTrack) => (type === "newer" ? String(t.releaseYear) : fansText(t.rank));
+    const fmt = (t: PoolTrack) =>
+      metric === "year" ? String(t.releaseYear) : metric === "youtube" ? `${formatViews(value(t))} гледания` : fansText(t.rank);
     const hi = Math.max(value(a), value(b));
     const lo = Math.min(value(a), value(b));
     const diff =
       type === "newer"
         ? `Разлика: ${hi - lo} ${hi - lo === 1 ? "година" : "години"}`
-        : `По класацията на Deezer по-популярната е ${(hi / Math.max(lo, 1)).toLocaleString("bg-BG", { maximumFractionDigits: 1 })} пъти по-слушана`;
+        : `${metric === "youtube" ? "В YouTube" : "По класацията на Deezer"} по-популярната е ${(hi / Math.max(lo, 1)).toLocaleString("bg-BG", { maximumFractionDigits: 1 })} пъти по-${metric === "youtube" ? "гледана" : "слушана"}`;
     rounds.push({
       trackId: (correct === "left" ? left : right).id,
       albumId: null,
@@ -193,7 +211,7 @@ function pairRounds(type: "newer" | "higher", pool: PoolTrack[], random: Random)
       question: {
         public: {
           kind: "pair",
-          prompt: type === "newer" ? "Коя е излязла по-късно?" : "Коя е по-популярна?",
+          prompt: type === "newer" ? "Коя е излязла по-късно?" : metric === "youtube" ? "Коя има повече гледания в YouTube?" : "Коя е по-популярна в Deezer?",
           left: card(left, "left"),
           right: card(right, "right"),
         },
@@ -436,8 +454,9 @@ export function generateRounds(type: QuizType, pool: PoolTrack[], random: Random
     case "cover":
       return coverRounds(pool, random);
     case "newer":
+      return pairRounds("year", pool, random);
     case "higher":
-      return pairRounds(type, pool, random);
+      return higherRounds(pool, random);
     case "year":
       return yearRounds(pool, random);
     case "order":

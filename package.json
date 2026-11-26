@@ -18,7 +18,8 @@
     "catalog:backfill": "tsx --conditions=react-server scripts/backfill-catalog.ts",
     "postinstall": "prisma generate",
     "import:artist": "tsx --conditions=react-server scripts/import-artist.ts",
-    "vercel-build": "prisma generate && next build"
+    "vercel-build": "prisma generate && next build",
+    "youtube:sync": "tsx --conditions=react-server scripts/youtube-sync.ts"
   },
   "dependencies": {
     "@prisma/adapter-pg": "^7.10.1",

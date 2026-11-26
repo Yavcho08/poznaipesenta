@@ -61,9 +61,9 @@ export const QUIZZES: Record<QuizType, QuizMeta> = {
   higher: {
     type: "higher",
     title: "Коя е по-популярна?",
-    short: "По популярност в Deezer",
+    short: "По гледания в YouTube",
     icon: "📈",
-    howTo: "Две песни — избери коя е по-слушана (по класацията на Deezer). Играеш до първата грешка.",
+    howTo: "Две песни — избери коя има повече гледания в YouTube (за песни без клип — по класацията на Deezer). Играеш до първата грешка.",
     length: "streak",
     byArtist: true,
     audio: false,

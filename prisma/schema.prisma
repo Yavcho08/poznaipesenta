@@ -103,6 +103,11 @@ model Track {
   searchKey         String          @default("") @map("search_key")
   // Секундата в Deezer откъса, от която започват клиповете (припевът) — src/lib/audio/hook.ts.
   hookStart         Float?          @map("hook_start")
+  // Гледания в YouTube (src/lib/youtube.ts) — за „Коя е по-популярна?“
+  youtubeVideoId    String?         @map("youtube_video_id")
+  youtubeViews      Float?          @map("youtube_views")
+  youtubeCheckedAt  DateTime?       @map("youtube_checked_at") @db.Timestamptz(6)
+  youtubeViewsAt    DateTime?       @map("youtube_views_at") @db.Timestamptz(6)
   isActive          Boolean         @default(true) @map("is_active")
   // no_preview | hidden | duplicate
   deactivatedReason String?         @map("deactivated_reason")
@@ -117,6 +122,7 @@ model Track {
   @@index([artistId], map: "tracks_artist_idx")
   @@index([albumId], map: "tracks_album_idx")
   @@index([createdAt(sort: Desc)], map: "tracks_created_idx")
+  @@index([rank(sort: Desc)], map: "tracks_youtube_pending_idx")
   @@map("tracks")
 }
 
