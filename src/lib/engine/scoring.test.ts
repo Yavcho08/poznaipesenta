@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { evaluate, inputFits, isQuizFinished, orderPoints, yearPoints } from "./scoring";
+import { evaluate, inputFits, isQuizFinished, orderPlacement, orderPoints, yearPoints } from "./scoring";
 import type { StoredQuestion } from "./types";
 
 describe("yearPoints", () => {
@@ -15,12 +15,16 @@ describe("yearPoints", () => {
 
 describe("orderPoints", () => {
   const years = { a: 1998, b: 2003, c: 2010, d: 2015, e: 2021 };
-  it("правилен ред = 100, обратен = 0", () => {
+  it("правилен ред = 100; обратен = 20 (средната си е на мястото)", () => {
     expect(orderPoints(["a", "b", "c", "d", "e"], years)).toBe(100);
-    expect(orderPoints(["e", "d", "c", "b", "a"], years)).toBe(0);
+    expect(orderPoints(["e", "d", "c", "b", "a"], years)).toBe(20);
   });
-  it("една разменена съседна двойка = 90", () => {
-    expect(orderPoints(["b", "a", "c", "d", "e"], years)).toBe(90);
+  it("точки само за песните на точното им място", () => {
+    // а и б са разменени → 3 от 5 на място
+    expect(orderPoints(["b", "a", "c", "d", "e"], years)).toBe(60);
+    // всичко изместено с едно → нито една на място, 0 точки (преди даваше 60)
+    expect(orderPoints(["e", "a", "b", "c", "d"], years)).toBe(0);
+    expect(orderPlacement(["a", "c", "b", "d", "e"], years)).toEqual([true, false, false, true, true]);
   });
   it("песни от една година могат да са в произволен ред", () => {
     expect(orderPoints(["y", "x"], { x: 2000, y: 2000 })).toBe(100);

@@ -15,22 +15,19 @@ export function yearPoints(guess: number, actual: number): number {
 }
 
 /**
- * Хронология: дял на правилно подредените двойки (Kendall), 0–100.
- * Песни от една година могат да са в произволен ред помежду си.
+ * Хронология: коя песен е на точното си място. Позиция i е вярна, ако годината на песента там
+ * е i-тата по ред (песни от една година могат да си разменят местата).
  */
+export function orderPlacement(guessIds: string[], years: Record<string, number>): boolean[] {
+  const sorted = guessIds.map((id) => years[id]).filter((y): y is number => y !== undefined).sort((a, b) => a - b);
+  return guessIds.map((id, i) => years[id] !== undefined && years[id] === sorted[i]);
+}
+
+/** Хронология: точки само за песните на точното им място (5 песни = по 20), 0–100. */
 export function orderPoints(guessIds: string[], years: Record<string, number>): number {
-  let good = 0;
-  let total = 0;
-  for (let i = 0; i < guessIds.length; i++) {
-    for (let j = i + 1; j < guessIds.length; j++) {
-      const a = years[guessIds[i]];
-      const b = years[guessIds[j]];
-      if (a === undefined || b === undefined) continue;
-      total++;
-      if (a <= b) good++;
-    }
-  }
-  return total === 0 ? 0 : Math.round((good / total) * 100);
+  if (guessIds.length === 0) return 0;
+  const placed = orderPlacement(guessIds, years).filter(Boolean).length;
+  return Math.round((placed / guessIds.length) * 100);
 }
 
 export interface Evaluation {

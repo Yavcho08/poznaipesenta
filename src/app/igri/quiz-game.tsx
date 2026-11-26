@@ -4,7 +4,8 @@ import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ClipPlayer, type Clip } from "@/lib/audio/clip-player";
 import { celebrate, finale, wrongFeedback } from "@/lib/effects";
-import { COVER_POINTS, STREAK_POINTS } from "@/lib/engine/scoring";
+import { COVER_POINTS, orderPlacement, STREAK_POINTS } from "@/lib/engine/scoring";
+import { QUIZ_POINTS } from "@/lib/engine/types";
 import type { Answer, Option, QuizInput, QuizMeta, QuizRoundView, QuizType, QuizView, SongCard } from "@/lib/engine/types";
 import type { GameSource } from "@/lib/game/source";
 import { VolumeControl } from "@/components/volume-control";
@@ -155,6 +156,7 @@ export function QuizGame({ meta, source, daily, sourceLabel }: { meta: QuizMeta;
           <p className="text-sm text-muted">{daily ? "Дневно предизвикателство — еднакво за всички днес" : sourceLabel}</p>
         </div>
         <p className="mx-auto max-w-md text-sm">{meta.howTo}</p>
+        <p className="mx-auto w-fit rounded-full bg-surface-strong px-4 py-1.5 text-xs text-muted">🏆 {QUIZ_POINTS[meta.type]}</p>
         {error && (
           <p role="alert" className="rounded-lg bg-red-500/15 p-3 text-sm text-red-200">
             {error}
@@ -173,7 +175,9 @@ export function QuizGame({ meta, source, daily, sourceLabel }: { meta: QuizMeta;
   const round = quiz.rounds[viewIndex];
   if (!round) return null;
   const streak = meta.length === "streak";
-  const progress = streak ? `Серия: ${quiz.rounds.filter((r) => r.correct).length}` : `${viewIndex + 1} / ${quiz.rounds.length}`;
+  const correctSoFar = quiz.rounds.filter((r) => r.correct).length;
+  const doneSoFar = quiz.rounds.filter((r) => r.done).length;
+  const progress = streak ? `Серия: ${correctSoFar}` : `Въпрос ${viewIndex + 1} от ${quiz.rounds.length}`;
 
   return (
     <div className="space-y-4">
@@ -185,6 +189,23 @@ export function QuizGame({ meta, source, daily, sourceLabel }: { meta: QuizMeta;
         <span className="text-muted">{quiz.total} т.</span>
         {meta.audio && <VolumeControl onChange={(v) => player().setVolume(v)} />}
       </div>
+      {!streak && (
+        <div className="space-y-1">
+          <div className="flex gap-1" aria-hidden>
+            {quiz.rounds.map((r) => (
+              <span
+                key={r.index}
+                className={`h-1.5 flex-1 rounded-full ${
+                  !r.done ? (r.index === viewIndex ? "bg-accent/60" : "bg-surface-strong") : r.correct ? "bg-emerald-400" : r.points > 0 ? "bg-amber-400" : "bg-red-400"
+                }`}
+              />
+            ))}
+          </div>
+          <p className="text-right text-xs text-muted">
+            {doneSoFar ? `${correctSoFar} от ${doneSoFar} верни · средно ${Math.round(quiz.total / doneSoFar)} т. на въпрос` : " "}
+          </p>
+        </div>
+      )}
 
       <RoundBody
         key={`${quiz.id}-${viewIndex}`}
@@ -240,7 +261,7 @@ function RoundBody({
     case "year":
       return <YearRound song={q.song} min={q.min} max={q.max} round={round} busy={busy} onAnswer={onAnswer} onPlay={onPlay} />;
     case "order":
-      return <OrderRound items={q.items} round={round} busy={busy} onAnswer={onAnswer} />;
+      return <OrderRound items={q.items} artist={q.artist} round={round} busy={busy} onAnswer={onAnswer} />;
     case "choice":
       return (
         <div className="space-y-4">
@@ -285,8 +306,20 @@ function SongLine({ song }: { song: SongCard }) {
       <div className="min-w-0">
         <p className="truncate font-semibold">{song.title}</p>
         <p className="truncate text-sm text-muted">{song.artist}</p>
+        <Notes notes={song.notes} />
       </div>
     </div>
+  );
+}
+
+function Notes({ notes, center }: { notes?: string[]; center?: boolean }) {
+  if (!notes?.length) return null;
+  return (
+    <p className={`mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-muted ${center ? "justify-center" : ""}`}>
+      {notes.map((n) => (
+        <span key={n}>{n}</span>
+      ))}
+    </p>
   );
 }
 
@@ -396,6 +429,7 @@ function PairRound({
         <span className="line-clamp-2 font-semibold">{song.title}</span>
         <span className="text-xs text-muted">{song.artist}</span>
         {answer && <span className="font-display text-lg font-bold">{key === "left" ? answer.left : answer.right}</span>}
+        {answer && <Notes notes={key === "left" ? answer.leftNotes : answer.rightNotes} center />}
       </button>
     );
   };
@@ -472,10 +506,24 @@ function YearRound({
   );
 }
 
-function OrderRound({ items, round, busy, onAnswer }: { items: SongCard[]; round: QuizRoundView; busy: boolean; onAnswer: (input: QuizInput) => void }) {
+function OrderRound({
+  items,
+  artist,
+  round,
+  busy,
+  onAnswer,
+}: {
+  items: SongCard[];
+  artist?: string;
+  round: QuizRoundView;
+  busy: boolean;
+  onAnswer: (input: QuizInput) => void;
+}) {
   const submitted = round.attempts[0]?.input.kind === "order" ? round.attempts[0].input.ids : null;
   const [order, setOrder] = useState<string[]>(submitted ?? items.map((i) => i.id));
-  const years = round.answer?.kind === "order" ? round.answer.years : null;
+  const answer = round.answer?.kind === "order" ? round.answer : null;
+  const years = answer?.years ?? null;
+  const placed = years ? orderPlacement(order, years) : null;
   const byId = new Map(items.map((i) => [i.id, i]));
   const move = (from: number, to: number) => {
     if (to < 0 || to >= order.length) return;
@@ -485,19 +533,32 @@ function OrderRound({ items, round, busy, onAnswer }: { items: SongCard[]; round
   };
   return (
     <div className="space-y-3">
-      <p className="text-center font-display text-lg font-bold">От най-старата до най-новата</p>
+      <div className="text-center">
+        <p className="font-display text-lg font-bold">От най-старата до най-новата</p>
+        {artist && <p className="text-sm text-muted">Песни на {artist}</p>}
+      </div>
+      {placed && (
+        <p className="text-center text-sm">
+          На точното си място: <strong>{placed.filter(Boolean).length} от {placed.length}</strong> (по 20 т.)
+        </p>
+      )}
       <ol className="space-y-2">
         {order.map((id, i) => {
           const song = byId.get(id) as SongCard;
-          const ok = years && (i === 0 || years[order[i - 1]] <= years[id]);
+          const ok = placed?.[i];
+          const rightPlace = answer ? answer.ids.indexOf(id) + 1 : 0;
           return (
-            <li key={id} className={`card flex items-center gap-2 p-2 ${years ? (ok ? "border-emerald-400/60" : "border-red-400/60") : ""}`}>
-              <span className="w-5 text-center text-sm text-muted">{i + 1}</span>
+            <li key={id} className={`card flex items-center gap-2 p-2 ${placed ? (ok ? "border-emerald-400/60" : "border-red-400/60") : ""}`}>
+              <span className="w-5 text-center text-sm text-muted">{placed ? (ok ? "✅" : "❌") : i + 1}</span>
               {song.cover && (
                 // eslint-disable-next-line @next/next/no-img-element -- корица от Deezer CDN
                 <img src={song.cover} alt="" width={40} height={40} className="rounded-md" />
               )}
-              <span className="min-w-0 flex-1 truncate text-sm font-semibold">{song.title}</span>
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-sm font-semibold">{song.title}</span>
+                {placed && !ok && <span className="block text-xs text-red-200">Мястото ѝ е № {rightPlace}</span>}
+                {answer?.notes?.[id] && <Notes notes={answer.notes[id]} />}
+              </span>
               {years ? (
                 <span className="font-display font-bold">{years[id]}</span>
               ) : (
@@ -530,9 +591,29 @@ function answerText(answer: Answer | null): string | null {
   return null;
 }
 
+function feedbackDetail(round: QuizRoundView): string | null {
+  const a = round.answer;
+  if (!a) return null;
+  if (a.kind === "pair") return a.diff ?? null;
+  if (a.kind === "year") {
+    const guess = round.attempts[0]?.input;
+    if (guess?.kind !== "year") return null;
+    const off = Math.abs(guess.year - a.year);
+    if (off === 0) return "Позна точната година!";
+    return `Твоят отговор: ${guess.year} — ${off} ${off === 1 ? "година" : "години"} ${guess.year < a.year ? "по-рано" : "по-късно"}`;
+  }
+  if (a.kind === "option" && round.question.kind === "cover") {
+    const tries = round.attempts.length;
+    const nth = ["първата", "втората", "третата", "четвъртата", "петата"][tries - 1] ?? `${tries}-ата`;
+    return round.correct ? `Позна на ${nth} стъпка` : null;
+  }
+  return null;
+}
+
 function Feedback({ round, type }: { round: QuizRoundView; type: QuizType }) {
   const good = round.points > 0;
   const text = answerText(round.answer);
+  const detail = feedbackDetail(round);
   return (
     <div className={`card space-y-2 p-4 text-center ${good ? "border-emerald-400/50" : "border-red-400/40"}`}>
       <p className="font-display text-lg font-bold">
@@ -543,12 +624,20 @@ function Feedback({ round, type }: { round: QuizRoundView; type: QuizType }) {
           Верният отговор: <strong>{text}</strong>
         </p>
       )}
+      {detail && <p className="text-sm text-muted">{detail}</p>}
       {round.reveal && <SongLine song={round.reveal} />}
     </div>
   );
 }
 
 // --- Резултат ---
+
+function resultLabel(r: QuizRoundView): string {
+  const q = r.question;
+  if (q.kind === "pair") return `${q.left.title} или ${q.right.title}`;
+  if (q.kind === "order") return q.artist ? `Хронология · ${q.artist}` : "Хронология";
+  return "";
+}
 
 function shareLine(quiz: QuizView, meta: QuizMeta): string {
   const marks = quiz.rounds.map((r) => (r.correct ? "🟩" : r.points > 0 ? "🟨" : "🟥")).join("");
@@ -581,12 +670,31 @@ function QuizResults({ quiz, meta, onRestart, unlocked }: { quiz: QuizView; meta
           {streak ? `серия от ${correct} (по ${STREAK_POINTS} т.)` : `точки · ${correct} от ${quiz.rounds.length} верни`}
         </p>
       </div>
+      {!streak && (
+        <div className="grid grid-cols-3 gap-2 text-center">
+          <div className="card p-3">
+            <p className="font-display text-2xl font-bold text-emerald-300">{correct}</p>
+            <p className="text-xs text-muted">точни</p>
+          </div>
+          <div className="card p-3">
+            <p className="font-display text-2xl font-bold text-amber-300">{quiz.rounds.filter((r) => !r.correct && r.points > 0).length}</p>
+            <p className="text-xs text-muted">частично</p>
+          </div>
+          <div className="card p-3">
+            <p className="font-display text-2xl font-bold">{quiz.rounds.length ? Math.round(quiz.total / quiz.rounds.length) : 0}</p>
+            <p className="text-xs text-muted">средно т.</p>
+          </div>
+        </div>
+      )}
       <ol className="space-y-2">
         {quiz.rounds.map((r) => (
           <li key={r.index} className="card flex items-center gap-3 p-2">
             <span className="w-5 text-right text-sm text-muted">{r.index + 1}</span>
             <span aria-hidden>{r.correct ? "✅" : r.points > 0 ? "🟨" : "❌"}</span>
-            <span className="min-w-0 flex-1 truncate text-sm">{r.reveal ? `${r.reveal.title} – ${r.reveal.artist}` : (answerText(r.answer) ?? "")}</span>
+            <span className="min-w-0 flex-1">
+              <span className="block truncate text-sm">{r.reveal ? `${r.reveal.title} – ${r.reveal.artist}` : (answerText(r.answer) ?? resultLabel(r))}</span>
+              {r.reveal?.notes && <Notes notes={r.reveal.notes} />}
+            </span>
             <span className="w-10 text-right font-semibold">{r.points}</span>
           </li>
         ))}

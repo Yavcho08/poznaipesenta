@@ -54,6 +54,34 @@ function card(t: PoolTrack, id: string, withCover = true): SongCard {
   return { id, title: cleanTitle(t.title) || t.title, artist: t.artistName, cover: withCover ? t.albumCover : null };
 }
 
+const RECORD_TYPE: Record<string, string> = { album: "албум", ep: "EP", single: "сингъл" };
+
+function mmss(seconds: number): string {
+  return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
+}
+
+/** Детайли за песента след края на рунда. */
+function songNotes(t: PoolTrack, skip: { album?: boolean; year?: boolean } = {}): string[] {
+  const notes: string[] = [];
+  if (!skip.album && t.album?.title) {
+    const kind = t.album.recordType ? RECORD_TYPE[t.album.recordType] : null;
+    notes.push(`💿 ${kind && kind !== "сингъл" ? `${kind} ` : ""}„${t.album.title}“${kind === "сингъл" ? " (сингъл)" : ""}`);
+  }
+  if (!skip.year && t.releaseYear) notes.push(`📅 ${t.releaseYear}`);
+  if (t.duration) notes.push(`⏱ ${mmss(t.duration)}`);
+  const feat = t.artists.filter((a) => a.role === "featured").map((a) => a.name);
+  if (feat.length) notes.push(`🎤 с ${feat.join(", ")}`);
+  return notes;
+}
+
+function revealCard(t: PoolTrack, skip?: { album?: boolean; year?: boolean }): SongCard {
+  return { ...card(t, "song"), notes: songNotes(t, skip) };
+}
+
+function fansText(rank: number): string {
+  return rank >= 1000 ? `${Math.round(rank / 1000).toLocaleString("bg-BG")} хил.` : String(rank);
+}
+
 function groupBy<T, K>(items: T[], key: (item: T) => K): Map<K, T[]> {
   const map = new Map<K, T[]>();
   for (const item of items) {
@@ -116,7 +144,16 @@ function coverRounds(pool: PoolTrack[], random: Random): RoundSpec[] {
       question: {
         public: { kind: "cover", artist: null, options, steps: 5 },
         answer: { kind: "option", id: correct.id, label: target.album.title },
-        reveal: { id: "album", title: target.album.title, artist: target.artist, cover: target.album.coverUrl },
+        reveal: {
+          id: "album",
+          title: target.album.title,
+          artist: target.artist,
+          cover: target.album.coverUrl,
+          notes: [
+            target.album.recordType ? `💿 ${RECORD_TYPE[target.album.recordType] ?? target.album.recordType}` : null,
+            yearOf(target.album.releaseDate) ? `📅 ${yearOf(target.album.releaseDate)}` : null,
+          ].filter((n): n is string => n !== null),
+        },
       },
     };
   });
@@ -142,7 +179,13 @@ function pairRounds(type: "newer" | "higher", pool: PoolTrack[], random: Random)
     used.add(b.id);
     const [left, right] = random() < 0.5 ? [a, b] : [b, a];
     const correct = value(left) > value(right) ? "left" : "right";
-    const fmt = (t: PoolTrack) => (type === "newer" ? String(t.releaseYear) : `${Math.round(t.rank / 1000).toLocaleString("bg-BG")} хил.`);
+    const fmt = (t: PoolTrack) => (type === "newer" ? String(t.releaseYear) : fansText(t.rank));
+    const hi = Math.max(value(a), value(b));
+    const lo = Math.min(value(a), value(b));
+    const diff =
+      type === "newer"
+        ? `Разлика: ${hi - lo} ${hi - lo === 1 ? "година" : "години"}`
+        : `По класацията на Deezer по-популярната е ${(hi / Math.max(lo, 1)).toLocaleString("bg-BG", { maximumFractionDigits: 1 })} пъти по-слушана`;
     rounds.push({
       trackId: (correct === "left" ? left : right).id,
       albumId: null,
@@ -154,7 +197,15 @@ function pairRounds(type: "newer" | "higher", pool: PoolTrack[], random: Random)
           left: card(left, "left"),
           right: card(right, "right"),
         },
-        answer: { kind: "pair", correct, left: fmt(left), right: fmt(right) },
+        answer: {
+          kind: "pair",
+          correct,
+          left: fmt(left),
+          right: fmt(right),
+          leftNotes: songNotes(left, { year: type === "newer" }),
+          rightNotes: songNotes(right, { year: type === "newer" }),
+          diff,
+        },
         reveal: null,
       },
     });
@@ -176,7 +227,7 @@ function yearRounds(pool: PoolTrack[], random: Random): RoundSpec[] {
     question: {
       public: { kind: "year", song: card(t, "song"), min: 1980, max: now },
       answer: { kind: "year", year: t.releaseYear as number },
-      reveal: card(t, "song"),
+      reveal: revealCard(t, { year: true }),
     },
   }));
 }
@@ -201,13 +252,21 @@ function orderRounds(pool: PoolTrack[], random: Random): RoundSpec[] {
       random,
     );
     const yearsById: Record<string, number> = {};
-    songs.forEach((t, k) => (yearsById[`s${k}`] = t.releaseYear as number));
+    const notes: Record<string, string[]> = {};
+    songs.forEach((t, k) => {
+      yearsById[`s${k}`] = t.releaseYear as number;
+      notes[`s${k}`] = songNotes(t, { year: true });
+    });
     const ids = [...items].sort((a, b) => yearsById[a.id] - yearsById[b.id]).map((it) => it.id);
     rounds.push({
       trackId: null,
       albumId: null,
       artistId: songs[0].artistId,
-      question: { public: { kind: "order", items }, answer: { kind: "order", ids, years: yearsById }, reveal: null },
+      question: {
+        public: { kind: "order", items, artist: songs[0].artist?.name ?? songs[0].artistName },
+        answer: { kind: "order", ids, years: yearsById, notes },
+        reveal: null,
+      },
     });
     if (i > 50) break;
   }
@@ -253,7 +312,7 @@ function albumRounds(pool: PoolTrack[], random: Random): RoundSpec[] {
       question: {
         public: { kind: "choice", prompt: `От кой албум на ${t.artistName} е тази песен?`, song: card(t, "song", false), options },
         answer: { kind: "option", id: correctId, label: album.title },
-        reveal: { ...card(t, "song"), cover: album.coverUrl ?? t.albumCover },
+        reveal: { ...revealCard(t), cover: album.coverUrl ?? t.albumCover },
       },
     };
   });
@@ -288,7 +347,7 @@ function singerRounds(pool: PoolTrack[], random: Random): RoundSpec[] {
       question: {
         public: { kind: "choice", prompt: `Кой пее заедно с ${main}?`, song: null, options },
         answer: { kind: "option", id: (options.find((o) => o.label === feat.name) as Option).id, label: feat.name },
-        reveal: card(t, "song"),
+        reveal: revealCard(t),
       },
     });
   }
@@ -313,7 +372,7 @@ function singerRounds(pool: PoolTrack[], random: Random): RoundSpec[] {
       question: {
         public: { kind: "choice", prompt: "Кой пее?", song: null, options },
         answer: { kind: "option", id: (options.find((o) => o.label === name) as Option).id, label: name },
-        reveal: card(t, "song"),
+        reveal: revealCard(t),
       },
     });
   }
@@ -365,7 +424,7 @@ function wordRounds(pool: PoolTrack[], random: Random): RoundSpec[] {
       question: {
         public: { kind: "word", masked, artist: t.artistName, options },
         answer: { kind: "option", id: (options.find((o) => o.label === word) as Option).id, label: word },
-        reveal: card(t, "song"),
+        reveal: revealCard(t),
       },
     });
   }

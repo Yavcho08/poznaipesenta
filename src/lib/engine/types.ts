@@ -25,6 +25,18 @@ export interface QuizMeta {
   audio: boolean;
 }
 
+/** Как се печелят точки (на екрана преди старта). */
+export const QUIZ_POINTS: Record<QuizType, string> = {
+  cover: "10 корици · 100 / 80 / 60 / 40 / 20 т. според стъпката",
+  newer: "10 т. за всеки верен отговор · до 30 поред",
+  higher: "10 т. за всеки верен отговор · до 30 поред",
+  year: "10 песни · до 100 т. (−20 за всяка година разлика)",
+  order: "5 рунда · по 20 т. за всяка песен на точното ѝ място",
+  album: "10 песни · 100 т. за верен отговор",
+  singer: "10 откъса · 100 т. за верен отговор",
+  word: "10 заглавия · 100 т. за верен отговор",
+};
+
 export const QUIZZES: Record<QuizType, QuizMeta> = {
   cover: {
     type: "cover",
@@ -71,7 +83,7 @@ export const QUIZZES: Record<QuizType, QuizMeta> = {
     title: "Подреди хронологично",
     short: "5 песни на един артист",
     icon: "🔢",
-    howTo: "Подреди 5 песни на един артист от най-старата до най-новата.",
+    howTo: "Подреди 5 песни на един артист от най-старата до най-новата. Точки получаваш само за песните, които са на точното си място.",
     length: 5,
     byArtist: true,
     audio: false,
@@ -114,6 +126,8 @@ export interface SongCard {
   title: string;
   artist: string;
   cover: string | null;
+  /** Детайли след края на рунда (албум, година, времетраене, дует) — никога във въпроса. */
+  notes?: string[];
 }
 
 export interface Option {
@@ -127,16 +141,16 @@ export type PublicQuestion =
   | { kind: "cover"; artist: string | null; options: Option[]; steps: number }
   | { kind: "pair"; prompt: string; left: SongCard; right: SongCard }
   | { kind: "year"; song: SongCard; min: number; max: number }
-  | { kind: "order"; items: SongCard[] }
+  | { kind: "order"; items: SongCard[]; artist?: string }
   | { kind: "choice"; prompt: string; song: SongCard | null; options: Option[] }
   | { kind: "word"; masked: string; artist: string; options: Option[] };
 
 /** Верният отговор (само на сървъра до края на рунда). */
 export type Answer =
   | { kind: "option"; id: string; label: string }
-  | { kind: "pair"; correct: "left" | "right"; left: string; right: string }
+  | { kind: "pair"; correct: "left" | "right"; left: string; right: string; leftNotes?: string[]; rightNotes?: string[]; diff?: string }
   | { kind: "year"; year: number }
-  | { kind: "order"; ids: string[]; years: Record<string, number> };
+  | { kind: "order"; ids: string[]; years: Record<string, number>; notes?: Record<string, string[]> };
 
 export type QuizInput =
   | { kind: "option"; id: string }

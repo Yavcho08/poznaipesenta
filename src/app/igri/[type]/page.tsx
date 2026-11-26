@@ -7,6 +7,7 @@ import { describeSource } from "@/lib/game/server";
 import { sourceFromQuery, type GameSource } from "@/lib/game/source";
 import { prisma } from "@/lib/prisma";
 import { QuizGame } from "../quiz-game";
+import { ArtistPicker } from "./artist-picker";
 
 export async function generateMetadata({ params }: PageProps<"/igri/[type]">): Promise<Metadata> {
   const { type } = await params;
@@ -21,13 +22,13 @@ async function Game({ params, searchParams }: PageProps<"/igri/[type]">) {
   const daily = query.daily === "1";
   const source: GameSource | null = query.type ? sourceFromQuery(query) : null;
   const label = source ? await describeSource(source) : "Целият поп-фолк";
-  const selectedArtist = source?.type === "artists" && source.ids.length === 1 ? source.ids[0] : "";
+  const selectedArtists = source?.type === "artists" ? source.ids : [];
 
   const artists = meta.byArtist
     ? await prisma.artist.findMany({
         where: { isActive: true, tracks: { some: { isActive: true } } },
         orderBy: { name: "asc" },
-        select: { id: true, name: true },
+        select: { id: true, name: true, _count: { select: { tracks: { where: { isActive: true } } } } },
       })
     : [];
 
@@ -47,23 +48,15 @@ async function Game({ params, searchParams }: PageProps<"/igri/[type]">) {
       </nav>
 
       {meta.byArtist && !daily && (
-        <form method="get" className="flex gap-2">
-          <input type="hidden" name="type" value="artists" />
-          <select name="id" defaultValue={selectedArtist} aria-label="Само песни на артист" className="field py-2">
-            <option value="">Само песни на…</option>
-            {artists.map((a) => (
-              <option key={a.id} value={a.id}>
-                {a.name}
-              </option>
-            ))}
-          </select>
-          <button type="submit" className="btn-ghost shrink-0 px-4 py-2 text-sm">
-            Избери
-          </button>
-        </form>
+        <ArtistPicker
+          key={selectedArtists.join(",")}
+          type={type}
+          artists={artists.map((a) => ({ id: a.id, name: a.name, count: a._count.tracks }))}
+          selected={selectedArtists}
+        />
       )}
 
-      <QuizGame key={`${type}-${daily}-${selectedArtist}`} meta={meta} source={daily ? null : source} daily={daily} sourceLabel={label} />
+      <QuizGame key={`${type}-${daily}-${selectedArtists.join(",")}`} meta={meta} source={daily ? null : source} daily={daily} sourceLabel={label} />
     </div>
   );
 }
