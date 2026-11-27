@@ -19,6 +19,10 @@ export interface RoundRow {
   solvedStep: number | null;
   points: number;
   answerMs: number | null;
+  /** Нормализирани точки на играта (до 1000) */
+  gameScore?: number | null;
+  /** Рундът е изигран (в серия рундовете след грешката не се играят) */
+  roundDone?: boolean;
 }
 
 export interface ArtistStat {
@@ -125,25 +129,59 @@ export function decadeStats(rows: RoundRow[]): GroupStat[] {
 export interface ModeStat {
   gameType: string;
   games: number;
+  /** Средно и най-добре — нормализирани точки (до 1000 на игра), както в класацията */
   avgTotal: number;
   best: number;
+  /** Изиграни въпроси/песни и верни сред тях */
+  played: number;
+  correct: number;
+  accuracy: number;
 }
 
-/** По режим: брой игри, среден и най-добър резултат (само довършени игри). */
+/** Верен рунд: позната песен / верен отговор (частичните точки не са „верен“). */
+export const roundCorrect = (r: RoundRow): boolean => r.solvedStep !== null;
+const roundPlayed = (r: RoundRow): boolean => r.roundDone ?? true;
+
+/** Обща точност във всички игри. */
+export function overallAccuracy(rows: RoundRow[]): { played: number; correct: number; accuracy: number } {
+  const played = rows.filter(roundPlayed);
+  const correct = played.filter(roundCorrect).length;
+  return { played: played.length, correct, accuracy: played.length ? Math.round((correct / played.length) * 100) : 0 };
+}
+
+/** По игра: брой игри, точност, среден и най-добър резултат (довършени игри). */
 export function modeStats(rows: RoundRow[]): ModeStat[] {
-  const games = new Map<string, { gameType: string; total: number }>();
-  for (const r of rows) if (r.finishedAt) games.set(r.gameId, { gameType: r.gameType, total: r.gameTotal });
-  const map = new Map<string, { games: number; sum: number; best: number }>();
+  const games = new Map<string, { gameType: string; score: number }>();
+  for (const r of rows) if (r.finishedAt) games.set(r.gameId, { gameType: r.gameType, score: r.gameScore ?? r.gameTotal });
+  const map = new Map<string, { games: number; sum: number; best: number; played: number; correct: number }>();
+  const entry = (type: string) => {
+    const cur = map.get(type) ?? { games: 0, sum: 0, best: 0, played: 0, correct: 0 };
+    map.set(type, cur);
+    return cur;
+  };
   for (const g of games.values()) {
-    const cur = map.get(g.gameType) ?? { games: 0, sum: 0, best: 0 };
+    const cur = entry(g.gameType);
     cur.games++;
-    cur.sum += g.total;
-    cur.best = Math.max(cur.best, g.total);
-    map.set(g.gameType, cur);
+    cur.sum += g.score;
+    cur.best = Math.max(cur.best, g.score);
+  }
+  for (const r of rows) {
+    if (!roundPlayed(r)) continue;
+    const cur = entry(r.gameType);
+    cur.played++;
+    if (roundCorrect(r)) cur.correct++;
   }
   return [...map.entries()]
-    .map(([gameType, s]) => ({ gameType, games: s.games, avgTotal: Math.round(s.sum / s.games), best: s.best }))
-    .sort((a, b) => b.games - a.games);
+    .map(([gameType, s]) => ({
+      gameType,
+      games: s.games,
+      avgTotal: s.games ? Math.round(s.sum / s.games) : 0,
+      best: s.best,
+      played: s.played,
+      correct: s.correct,
+      accuracy: s.played ? Math.round((s.correct / s.played) * 100) : 0,
+    }))
+    .sort((a, b) => b.games - a.games || b.played - a.played);
 }
 
 export interface WeekStat {
@@ -151,7 +189,7 @@ export interface WeekStat {
   week: string;
   games: number;
   points: number;
-  /** Точност в „Познай песента“ (0–100) или null без игри */
+  /** Обща точност във всички игри (0–100) или null без игри */
   accuracy: number | null;
 }
 
@@ -176,10 +214,10 @@ export function weeklyStats(rows: RoundRow[], now: Date, weeks = 12): WeekStat[]
     if (!r.finishedAt) continue;
     const w = byWeek.get(mondayOf(r.finishedAt));
     if (!w) continue;
-    w.games.set(r.gameId, r.gameTotal);
-    if (r.gameType === "listen") {
+    w.games.set(r.gameId, r.gameScore ?? r.gameTotal);
+    if (roundPlayed(r)) {
       w.played++;
-      if (r.solvedStep !== null) w.solved++;
+      if (roundCorrect(r)) w.solved++;
     }
   }
   return keys.map((week) => {

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  overallAccuracy,
   albumStats,
   artistStats,
   decadeStats,
@@ -91,12 +92,20 @@ describe("групи", () => {
       ["00-те", 50],
     ]);
   });
-  it("по режим (по игра, не по рунд)", () => {
-    const rows = [row({ gameId: "a", gameTotal: 300 }), row({ gameId: "a", gameTotal: 300 }), row({ gameId: "b", gameTotal: 500 }), row({ gameId: "c", gameType: "year", gameTotal: 200 })];
+  it("по режим (по игра, не по рунд) + точност по игра", () => {
+    const rows = [
+      row({ gameId: "a", gameTotal: 300, solvedStep: 1 }),
+      row({ gameId: "a", gameTotal: 300 }),
+      row({ gameId: "b", gameTotal: 500, gameScore: 500, solvedStep: 0 }),
+      row({ gameId: "c", gameType: "year", gameTotal: 200 }),
+      // неизигран рунд в серия — не се брои
+      row({ gameId: "c", gameType: "year", gameTotal: 200, roundDone: false }),
+    ];
     expect(modeStats(rows)).toEqual([
-      { gameType: "listen", games: 2, avgTotal: 400, best: 500 },
-      { gameType: "year", games: 1, avgTotal: 200, best: 200 },
+      { gameType: "listen", games: 2, avgTotal: 400, best: 500, played: 3, correct: 2, accuracy: 67 },
+      { gameType: "year", games: 1, avgTotal: 200, best: 200, played: 1, correct: 0, accuracy: 0 },
     ]);
+    expect(overallAccuracy(rows)).toEqual({ played: 4, correct: 2, accuracy: 50 });
   });
 });
 

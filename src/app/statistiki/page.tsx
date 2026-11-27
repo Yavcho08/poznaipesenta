@@ -5,7 +5,7 @@ import { connection } from "next/server";
 import { BarChart, PercentBar } from "@/components/charts";
 import { peekOwner } from "@/lib/auth/viewer";
 import { isQuizType, QUIZZES } from "@/lib/engine/types";
-import { albumStats, decadeStats, fastestSongs, modeStats, strongWeak, trainSongs, weeklyStats } from "@/lib/stats/compute";
+import { albumStats, decadeStats, fastestSongs, modeStats, overallAccuracy, strongWeak, trainSongs, weeklyStats } from "@/lib/stats/compute";
 import { artistStatsFull, loadRounds } from "@/lib/stats/server";
 import { STEPS } from "@/lib/game/rules";
 
@@ -68,8 +68,7 @@ async function Stats({ searchParams }: { searchParams: PageProps<"/statistiki">[
   const train = trainSongs(rows);
   const albumArtist = artists.find((a) => a.artistId === selected) ?? null;
   const albums = albumArtist ? albumStats(rows, albumArtist.artistId) : [];
-  const listenRounds = rows.filter((r) => r.gameType === "listen");
-  const solved = listenRounds.filter((r) => r.solvedStep !== null).length;
+  const overall = overallAccuracy(rows);
   const gameCount = new Set(rows.filter((r) => r.finishedAt).map((r) => r.gameId)).size;
 
   return (
@@ -90,16 +89,16 @@ async function Stats({ searchParams }: { searchParams: PageProps<"/statistiki">[
           <p className="text-xs text-muted">игри</p>
         </div>
         <div className="card p-3">
-          <p className="font-display text-xl font-bold">{solved}</p>
-          <p className="text-xs text-muted">познати песни</p>
+          <p className="font-display text-xl font-bold">{overall.correct}</p>
+          <p className="text-xs text-muted">верни отговора</p>
         </div>
         <div className="card p-3">
-          <p className="font-display text-xl font-bold">{listenRounds.length ? Math.round((solved / listenRounds.length) * 100) : 0}%</p>
-          <p className="text-xs text-muted">точност</p>
+          <p className="font-display text-xl font-bold">{overall.accuracy}%</p>
+          <p className="text-xs text-muted">обща точност</p>
         </div>
       </div>
 
-      <Section title="Прогрес по седмици" note="Точки от всички игри за последните 12 седмици">
+      <Section title="Прогрес по седмици" note="Точки от всички игри (до 1000 на игра) за последните 12 седмици">
         <BarChart
           data={weeks.map((w) => ({
             label: new Date(`${w.week}T12:00:00Z`).toLocaleDateString("bg-BG", { day: "numeric", month: "short" }),
@@ -166,15 +165,15 @@ async function Stats({ searchParams }: { searchParams: PageProps<"/statistiki">[
         <Section title="По десетилетие">
           {decades.length ? decades.map((d) => <PercentBar key={d.key} label={d.label} value={d.accuracy} sub={`${d.solved}/${d.played}`} />) : <p className="text-sm text-muted">Няма данни.</p>}
         </Section>
-        <Section title="По игра">
-          <ul className="divide-y divide-line text-sm">
+        <Section title="По игра" note="Точност = верни отговори от изиграните въпроси; точки — до 1000 на игра">
+          <ul className="space-y-3">
             {modes.map((m) => (
-              <li key={m.gameType} className="flex items-center gap-2 py-2">
-                <span className="min-w-0 flex-1 truncate">{modeName(m.gameType)}</span>
-                <span className="text-xs text-muted">{m.games} игри</span>
-                <span className="w-24 text-right">
-                  ср. <strong>{m.avgTotal}</strong> · макс {m.best}
-                </span>
+              <li key={m.gameType}>
+                <PercentBar
+                  label={modeName(m.gameType)}
+                  value={m.accuracy}
+                  sub={`${m.correct}/${m.played} верни · ${m.games} ${m.games === 1 ? "игра" : "игри"}${m.games ? ` · ср. ${m.avgTotal} · макс ${m.best}` : ""}`}
+                />
               </li>
             ))}
           </ul>
