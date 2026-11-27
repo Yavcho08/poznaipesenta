@@ -272,7 +272,7 @@ export function Game({
   const replay = () => {
     if (!game || !round) return;
     player().unlock();
-    void playClip(game.id, viewIndex, round.done ? 30 : STEPS[round.step], round.done ? "whole" : "hook");
+    void playClip(game.id, viewIndex, round.done ? REVEAL_S : STEPS[round.step], round.done ? "whole" : "hook");
   };
 
   const stopAudio = () => {
@@ -346,6 +346,8 @@ export function Game({
   if (!game || !round) return null;
 
   const clipLength = STEPS[round.step];
+  // След рунда: колкото реално звучи (от припева до края на откъса може да е под 30 сек.) — същото като лентата.
+  const revealLength = Math.round(playback?.duration ?? REVEAL_S);
 
   return (
     <div className="space-y-5">
@@ -375,7 +377,7 @@ export function Game({
           </button>
           <div className="min-w-0 flex-1">
             <p className="text-xs uppercase tracking-wider text-muted">{round.done ? "Песента" : "Откъс"}</p>
-            <p className="font-display text-3xl font-bold leading-none">{round.done ? "30" : clipLength} сек.</p>
+            <p className="font-display text-3xl font-bold leading-none">{round.done ? revealLength : clipLength} сек.</p>
             <p className="mt-1 text-xs text-muted">
               {playback ? "Слушаш…" : round.done ? "Натисни, за да чуеш целия откъс" : "Натисни, за да чуеш пак"}
             </p>
