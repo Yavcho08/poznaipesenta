@@ -16,6 +16,8 @@ interface Candidate extends SearchResult {
 }
 
 const MAX_RESULTS = 30;
+/** Когато заявката е артист — всичките му песни (после още малко други съвпадения). */
+const MAX_WITH_ARTIST = 200;
 
 function fromDeezer(t: DeezerTrack): Candidate {
   return {
@@ -45,6 +47,32 @@ async function matchArtist(variants: string[], wanted: string): Promise<number |
   return matches[0].id;
 }
 
+/** Наш артист със същото име (или началото на името, от 4 букви нагоре) — най-популярният. */
+async function localArtist(whole: string): Promise<string | null> {
+  const artists = await prisma.artist.findMany({
+    where: { isActive: true },
+    select: { id: true, name: true, nameLatin: true, isPopFolk: true, _count: { select: { tracks: { where: { isActive: true } } } } },
+  });
+  const keys = (a: (typeof artists)[number]) => [a.name, a.nameLatin ?? ""].map(looseKey).filter(Boolean);
+  const exact = artists.filter((a) => keys(a).includes(whole));
+  const prefix = whole.length >= 4 ? artists.filter((a) => keys(a).some((k) => k.startsWith(whole))) : [];
+  const best = (exact.length ? exact : prefix).sort((a, b) => Number(b.isPopFolk) - Number(a.isPopFolk) || b._count.tracks - a._count.tracks)[0];
+  return best?._count.tracks ? best.id : null;
+}
+
+/** Всички песни на артиста в играта (основен или участник), по популярност. */
+async function localArtistTracks(artistId: string): Promise<Candidate[]> {
+  const rows = await prisma.track.findMany({
+    where: { isActive: true, OR: [{ artistId }, { artists: { some: { artistId } } }] },
+    orderBy: [{ artistId: "asc" }, { rank: "desc" }],
+    select: { deezerId: true, title: true, artistName: true, artistId: true, albumCover: true, rank: true },
+  });
+  // Първо песните, в които е основен, после участията — всяка група по популярност.
+  return rows
+    .sort((a, b) => Number(b.artistId === artistId) - Number(a.artistId === artistId) || b.rank - a.rank)
+    .map((t) => ({ deezerId: t.deezerId, title: t.title, artist: t.artistName, cover: t.albumCover, rank: t.rank }));
+}
+
 async function searchLocal(words: string[]): Promise<Candidate[]> {
   if (words.length === 0) return [];
   const rows = await prisma.track.findMany({
@@ -72,11 +100,13 @@ export async function searchSongs(query: string): Promise<SearchResult[]> {
   const words = query.split(/\s+/).map(looseKey).filter(Boolean);
   if (!whole) return [];
 
-  const [artistId, trackLists, local] = await Promise.all([
+  const [ourArtist, artistId, trackLists, local] = await Promise.all([
+    localArtist(whole),
     matchArtist(variants, whole),
     Promise.all(variants.map((v) => searchTracks(v, 25).catch(() => []))),
     searchLocal(words),
   ]);
+  const ourTracks = ourArtist ? await localArtistTracks(ourArtist) : [];
 
   const artistTracks = artistId
     ? (await getArtistTop(String(artistId), 50).catch(() => []))
@@ -84,20 +114,22 @@ export async function searchSongs(query: string): Promise<SearchResult[]> {
         .sort((a, b) => b.rank - a.rank)
     : [];
 
-  const others = [...trackLists.flat().map(fromDeezer), ...local]
+  const scored = [...trackLists.flat().map(fromDeezer), ...local]
     .map((c) => ({ c, score: relevance(c, words, whole) }))
-    .sort((a, b) => b.score - a.score || b.c.rank - a.c.rank)
-    .map(({ c }) => c);
+    .sort((a, b) => b.score - a.score || b.c.rank - a.c.rank);
+  // Несвързаните резултати на Deezer (score 0) — само ако няма нищо по-добро.
+  const others = (scored.some((x) => x.score > 0) || ourTracks.length || artistTracks.length ? scored.filter((x) => x.score > 0) : scored).map(({ c }) => c);
 
   // Без дубликати: една песен от различни албуми/версии се показва веднъж.
   const seen = new Set<string>();
   const results: SearchResult[] = [];
-  for (const c of [...artistTracks, ...others]) {
+  const limit = ourTracks.length || artistTracks.length ? MAX_WITH_ARTIST : MAX_RESULTS;
+  for (const c of [...ourTracks, ...artistTracks, ...others]) {
     const key = songKey(c.title, c.artist);
     if (seen.has(key)) continue;
     seen.add(key);
     results.push({ deezerId: c.deezerId, title: c.title, artist: c.artist, cover: c.cover });
-    if (results.length === MAX_RESULTS) break;
+    if (results.length === limit) break;
   }
   return withDisplayNames(results);
 }
