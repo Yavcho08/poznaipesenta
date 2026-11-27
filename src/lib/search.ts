@@ -1,6 +1,7 @@
 import "server-only";
 import { getArtistTop, searchArtists, searchTracks, type DeezerTrack } from "@/lib/deezer";
 import { artistKey, looseKey, queryVariants, songKey } from "@/lib/normalize";
+import { shownArtist, shownTitle } from "@/lib/catalog/display";
 import { prisma } from "@/lib/prisma";
 
 export interface SearchResult {
@@ -98,5 +99,25 @@ export async function searchSongs(query: string): Promise<SearchResult[]> {
     results.push({ deezerId: c.deezerId, title: c.title, artist: c.artist, cover: c.cover });
     if (results.length === MAX_RESULTS) break;
   }
-  return results;
+  return withDisplayNames(results);
+}
+
+/** Имената както навсякъде в играта: от нашата база (кирилица, когато я имаме). */
+async function withDisplayNames(results: SearchResult[]): Promise<SearchResult[]> {
+  if (results.length === 0) return results;
+  const [local, artists] = await Promise.all([
+    prisma.track.findMany({
+      where: { deezerId: { in: results.map((r) => r.deezerId) } },
+      select: { deezerId: true, title: true, displayTitle: true, artistName: true, displayArtist: true },
+    }),
+    prisma.artist.findMany({ select: { name: true, nameLatin: true } }),
+  ]);
+  const byDeezer = new Map(local.map((t) => [t.deezerId, t]));
+  const artistByKey = new Map<string, string>();
+  for (const a of artists) for (const n of [a.name, a.nameLatin]) if (n) artistByKey.set(looseKey(n), a.name);
+  return results.map((r) => {
+    const t = byDeezer.get(r.deezerId);
+    if (t) return { ...r, title: shownTitle(t), artist: shownArtist(t) };
+    return { ...r, artist: artistByKey.get(looseKey(r.artist)) ?? r.artist };
+  });
 }

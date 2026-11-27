@@ -91,6 +91,10 @@ model Track {
   isrc              String?
   title             String
   artistName        String          @map("artist_name")
+  // Показване (src/lib/catalog/display-names.ts): override от админа > кирилско заглавие на друго издание
+  titleOverride     String?         @map("title_override")
+  displayTitle      String?         @map("display_title")
+  displayArtist     String?         @map("display_artist")
   artistId          String?         @map("artist_id")
   artist            Artist?         @relation(fields: [artistId], references: [id], onDelete: SetNull, onUpdate: NoAction)
   albumId           String?         @map("album_id")

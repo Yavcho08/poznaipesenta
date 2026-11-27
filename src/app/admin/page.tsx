@@ -46,6 +46,9 @@ async function Dashboard() {
           <Link href="/admin/sinhronizaciya" className="underline">
             Синхронизация
           </Link>
+          <Link href="/admin/imena" className="underline">
+            Имена
+          </Link>
           <Link href="/profil" className="text-muted underline">
             Профил
           </Link>

@@ -2,6 +2,7 @@ import "server-only";
 // Генератори на въпроси за всяка игра. Получават пул от песни (вече филтриран по източник и
 // по is_active) и генератор на случайни числа (детерминиран за дневното).
 
+import { shownArtist, shownTitle } from "@/lib/catalog/display";
 import { cleanTitle, looseKey, songKey } from "@/lib/normalize";
 import { nonBulgarianCyrillic, titlesLookBulgarian } from "@/lib/sync/filters";
 import { formatViews } from "@/lib/youtube-match";
@@ -52,8 +53,26 @@ function uniqueSongs(pool: PoolTrack[]): PoolTrack[] {
     });
 }
 
+/** Заглавие за показване, без „(feat. …)“ и версията. */
+function titleOf(t: PoolTrack): string {
+  const shown = shownTitle(t);
+  return cleanTitle(shown) || shown;
+}
+
+/** Основният артист за показване (името от нашата база — на кирилица). */
+function mainName(t: PoolTrack): string {
+  return t.artist?.name ?? shownArtist(t);
+}
+
+const ARTIST_NAMES = new Map<string, string>();
+
+/** Участник в песента — с името от нашата база, ако го имаме. */
+function featName(a: { artistId: string | null; name: string }): string {
+  return (a.artistId && ARTIST_NAMES.get(a.artistId)) || a.name;
+}
+
 function card(t: PoolTrack, id: string, withCover = true): SongCard {
-  return { id, title: cleanTitle(t.title) || t.title, artist: t.artistName, cover: withCover ? t.albumCover : null };
+  return { id, title: titleOf(t), artist: shownArtist(t), cover: withCover ? t.albumCover : null };
 }
 
 const RECORD_TYPE: Record<string, string> = { album: "албум", ep: "EP", single: "сингъл" };
@@ -71,7 +90,7 @@ function songNotes(t: PoolTrack, skip: { album?: boolean; year?: boolean } = {})
   }
   if (!skip.year && t.releaseYear && t.yearReliable) notes.push(`📅 ${t.releaseYear}`);
   if (t.duration) notes.push(`⏱ ${mmss(t.duration)}`);
-  const feat = t.artists.filter((a) => a.role === "featured").map((a) => a.name);
+  const feat = t.artists.filter((a) => a.role === "featured").map((a) => featName(a));
   if (feat.length) notes.push(`🎤 с ${feat.join(", ")}`);
   return notes;
 }
@@ -112,7 +131,7 @@ function coverRounds(pool: PoolTrack[], random: Random): RoundSpec[] {
   const albums = new Map<string, { album: Album; artist: string; artistId: string | null }>();
   for (const t of pool) {
     if (!t.album?.coverUrl || t.album.recordType === "compile") continue;
-    if (!albums.has(t.album.id)) albums.set(t.album.id, { album: t.album, artist: t.artistName, artistId: t.artistId });
+    if (!albums.has(t.album.id)) albums.set(t.album.id, { album: t.album, artist: mainName(t), artistId: t.artistId });
   }
   // Без повтарящи се заглавия (сингъл и албум с едно име).
   const byTitle = new Map<string, { album: Album; artist: string; artistId: string | null }>();
@@ -286,7 +305,7 @@ function orderRounds(pool: PoolTrack[], random: Random): RoundSpec[] {
       albumId: null,
       artistId: songs[0].artistId,
       question: {
-        public: { kind: "order", items, artist: songs[0].artist?.name ?? songs[0].artistName },
+        public: { kind: "order", items, artist: mainName(songs[0]) },
         answer: { kind: "order", ids, years: yearsById, notes },
         reveal: null,
       },
@@ -371,7 +390,7 @@ function albumRounds(pool: PoolTrack[], random: Random): RoundSpec[] {
       albumId: album.id,
       artistId: t.artistId,
       question: {
-        public: { kind: "choice", prompt: `От кой албум на ${t.artistName} е тази песен?`, song: card(t, "song", false), options },
+        public: { kind: "choice", prompt: `От кой албум на ${mainName(t)} е тази песен?`, song: card(t, "song", false), options },
         answer: { kind: "option", id: correctId, label: album.title },
         reveal: { ...revealCard(t), cover: album.coverUrl ?? t.albumCover },
       },
@@ -384,22 +403,26 @@ function singerRounds(pool: PoolTrack[], random: Random): RoundSpec[] {
     uniqueSongs(pool).filter((t) => t.artist),
     random,
   );
-  const artistNames = [...new Map(songs.map((t) => [t.artistId, t.artist?.name ?? t.artistName])).values()];
+  const artistNames = [...new Map(songs.map((t) => [t.artistId, mainName(t)])).values()];
   if (artistNames.length < 4) throw new NotEnoughData("Нужни са песни на поне 4 изпълнители.");
-  const duets = songs.filter((t) => t.artists.some((a) => a.role === "featured" && a.artistId));
+  // Участникът трябва да е наш артист (име на кирилица като вариантите) и различен от основния.
+  const duetPartner = (t: PoolTrack): TrackArtist | undefined =>
+    t.artists.find((a) => a.role === "featured" && a.artistId && ARTIST_NAMES.has(a.artistId) && looseKey(featName(a)) !== looseKey(mainName(t)));
+  const duets = songs.filter((t) => duetPartner(t));
   const rounds: RoundSpec[] = [];
   const used = new Set<string>();
   const total = QUIZZES.singer.length as number;
   const duetCount = Math.min(3, duets.length);
 
   for (const t of duets.slice(0, duetCount)) {
-    const feat = t.artists.find((a) => a.role === "featured" && a.artistId) as TrackArtist;
-    const main = t.artist?.name ?? t.artistName;
+    const feat = duetPartner(t) as TrackArtist;
+    const main = mainName(t);
+    const featLabel = featName(feat);
     const decoys = shuffle(
-      artistNames.filter((n) => looseKey(n) !== looseKey(main) && looseKey(n) !== looseKey(feat.name)),
+      artistNames.filter((n) => looseKey(n) !== looseKey(main) && looseKey(n) !== looseKey(featLabel)),
       random,
     ).slice(0, 3);
-    const options = shuffle([feat.name, ...decoys], random).map((label, i) => ({ id: `o${i}`, label }));
+    const options = shuffle([featLabel, ...decoys], random).map((label, i) => ({ id: `o${i}`, label }));
     used.add(t.id);
     rounds.push({
       trackId: t.id,
@@ -407,7 +430,7 @@ function singerRounds(pool: PoolTrack[], random: Random): RoundSpec[] {
       artistId: feat.artistId,
       question: {
         public: { kind: "choice", prompt: `Кой пее заедно с ${main}?`, song: null, options },
-        answer: { kind: "option", id: (options.find((o) => o.label === feat.name) as Option).id, label: feat.name },
+        answer: { kind: "option", id: (options.find((o) => o.label === featLabel) as Option).id, label: featLabel },
         reveal: revealCard(t),
       },
     });
@@ -417,7 +440,7 @@ function singerRounds(pool: PoolTrack[], random: Random): RoundSpec[] {
   for (const t of songs) {
     if (rounds.length >= total) break;
     if (used.has(t.id)) continue;
-    const name = t.artist?.name ?? t.artistName;
+    const name = mainName(t);
     const n = perArtist.get(name) ?? 0;
     if (n >= 2) continue;
     perArtist.set(name, n + 1);
@@ -482,7 +505,7 @@ function wordRounds(pool: PoolTrack[], random: Random): RoundSpec[] {
   // Думи от всички заглавия, по език (за грешните отговори).
   const wordsByLang = new Map<string, Map<string, string>>();
   for (const t of songs) {
-    for (const w of titleWords(t.title)) {
+    for (const w of titleWords(shownTitle(t))) {
       if (!usableWord(w)) continue;
       const lang = wordLang(w);
       const map = wordsByLang.get(lang) ?? new Map<string, string>();
@@ -493,7 +516,7 @@ function wordRounds(pool: PoolTrack[], random: Random): RoundSpec[] {
   const rounds: RoundSpec[] = [];
   for (const t of songs) {
     if (rounds.length >= (QUIZZES.word.length as number)) break;
-    const words = titleWords(t.title);
+    const words = titleWords(shownTitle(t));
     if (words.length < 2) continue;
     const candidates = words.filter(usableWord);
     if (candidates.length === 0) continue;
@@ -509,7 +532,7 @@ function wordRounds(pool: PoolTrack[], random: Random): RoundSpec[] {
       .filter((w) => (seen.has(w) ? false : (seen.add(w), true)))
       .slice(0, 3);
     if (decoys.length < 3) continue;
-    const display = cleanTitle(t.title) || t.title;
+    const display = titleOf(t);
     const escaped = word.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     const masked = display.replace(new RegExp(`(^|[^\\p{L}\\d])${escaped}(?=$|[^\\p{L}\\d])`, "u"), `$1${WORD_GAP}`);
     if (masked === display) continue;
@@ -519,7 +542,7 @@ function wordRounds(pool: PoolTrack[], random: Random): RoundSpec[] {
       albumId: t.albumId,
       artistId: t.artistId,
       question: {
-        public: { kind: "word", masked, artist: t.artistName, options },
+        public: { kind: "word", masked, artist: shownArtist(t), options },
         answer: { kind: "option", id: (options.find((o) => o.label === word) as Option).id, label: word },
         reveal: revealCard(t),
       },
@@ -529,6 +552,9 @@ function wordRounds(pool: PoolTrack[], random: Random): RoundSpec[] {
 }
 
 export function generateRounds(type: QuizType, pool: PoolTrack[], random: Random): RoundSpec[] {
+  // Имената на артистите в пула (за участниците в дуети, които Deezer дава на латиница).
+  ARTIST_NAMES.clear();
+  for (const t of pool) if (t.artist) ARTIST_NAMES.set(t.artist.id, t.artist.name);
   switch (type) {
     case "cover":
       return coverRounds(pool, random);

@@ -1,4 +1,5 @@
 import "server-only";
+import { shownArtist, shownTitle } from "@/lib/catalog/display";
 import { evaluateAchievements } from "@/lib/achievements/server";
 import { notifyRoom } from "@/lib/room/realtime";
 import { randomBytes, randomInt } from "node:crypto";
@@ -168,7 +169,7 @@ async function advance(room: Room): Promise<Room> {
 // --- Състояние ---
 
 function toAnswer(track: Track): Answer {
-  return { deezerId: track.deezerId, title: track.title, artist: track.artistName, cover: track.albumCover };
+  return { deezerId: track.deezerId, title: shownTitle(track), artist: shownArtist(track), cover: track.albumCover };
 }
 
 export async function getRoomState(code: string, token: string | null): Promise<RoomState> {
@@ -342,7 +343,8 @@ export async function moveInRoom(code: string, token: string, move: RoomMove): P
             throw new RoomError("Тази песен не е намерена — избери друга от списъка", 404);
           });
     const correct = isSameSong(chosen, { title: round.track.title, artist: round.track.artistName });
-    data = { kind: "guess", deezerId: move.deezerId, ...chosen, correct, points: correct ? pointsForStep(step) : 0 };
+    const shown = local ? { title: shownTitle(local), artist: shownArtist(local) } : chosen;
+    data = { kind: "guess", deezerId: move.deezerId, ...shown, correct, points: correct ? pointsForStep(step) : 0 };
   }
 
   try {

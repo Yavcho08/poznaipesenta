@@ -1,6 +1,7 @@
 import type { NextRequest } from "next/server";
 import { connection } from "next/server";
 import { cronAuthorized } from "@/lib/cron-auth";
+import { recomputeDisplayNames } from "@/lib/catalog/display-names";
 import { recomputeAllYears } from "@/lib/catalog/years-recompute";
 import { runSync } from "@/lib/sync/run";
 
@@ -15,7 +16,9 @@ export async function GET(req: NextRequest) {
     const summary = await runSync({ trigger: "cron", budgetMs: 25_000 });
     // Новите песни/албуми → годините наново (най-ранното издание; ~7 сек.).
     const years = await recomputeAllYears();
-    return Response.json({ ...summary, years });
+    // Имената за показване (кирилица) за новите песни.
+    const names = await recomputeDisplayNames();
+    return Response.json({ ...summary, years, names });
   } catch (error) {
     console.error("sync-catalog", error);
     return Response.json({ error: "Синхронизацията не успя" }, { status: 500 });

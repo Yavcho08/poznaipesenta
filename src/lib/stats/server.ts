@@ -31,7 +31,7 @@ export async function loadRounds(owner: Owner): Promise<RoundRow[]> {
     }[]
   >`
     SELECT g.id AS game_id, g.game_type, g.total AS game_total, g.finished_at AS game_finished,
-           gr.track_id, t.title, gr.artist_id, coalesce(a.name, t.artist_name) AS artist_name,
+           gr.track_id, coalesce(t.display_title, t.title) AS title, gr.artist_id, coalesce(a.name, t.display_artist, t.artist_name) AS artist_name,
            t.album_id, al.title AS album_title, t.release_year, gr.solved_step, gr.points, gr.answer_ms,
            g.score AS game_score, (gr.finished_at IS NOT NULL) AS round_done
     FROM game_rounds gr

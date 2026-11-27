@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { Prisma } from "@/generated/prisma/client";
 import { requireAdmin } from "@/lib/admin-auth";
 import { prisma } from "@/lib/prisma";
+import { recomputeDisplayNames } from "@/lib/catalog/display-names";
 import { recomputeAllYears } from "@/lib/catalog/years-recompute";
 import { runSync } from "@/lib/sync/run";
 
@@ -18,6 +19,7 @@ export async function runSyncAction(): Promise<SyncActionState> {
   await requireAdmin();
   const s = await runSync({ trigger: "manual", budgetMs: 40_000 });
   const years = await recomputeAllYears();
+  await recomputeDisplayNames();
   revalidatePath(PAGE);
   const rest = s.remaining > 0 ? ` Остават ${s.remaining} артиста — пусни пак, за да продължи.` : "";
   return {

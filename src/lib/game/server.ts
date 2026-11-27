@@ -1,4 +1,5 @@
 import "server-only";
+import { shownArtist, shownTitle } from "@/lib/catalog/display";
 import { normalizedScore } from "@/lib/game/score";
 import { prisma } from "@/lib/prisma";
 import { getPreviewUrl, getTrack } from "@/lib/deezer";
@@ -164,7 +165,7 @@ function parseGuesses(value: Prisma.JsonValue): Guess[] {
 }
 
 function toAnswer(track: Track): Answer {
-  return { deezerId: track.deezerId, title: track.title, artist: track.artistName, cover: track.albumCover };
+  return { deezerId: track.deezerId, title: shownTitle(track), artist: shownArtist(track), cover: track.albumCover };
 }
 
 const sessionInclude = { rounds: { include: { track: true }, orderBy: { index: "asc" } } } as const;
@@ -239,14 +240,15 @@ export type Move = ({ kind: "skip" } | { kind: "guess"; deezerId: string }) & { 
 
 const MAX_ANSWER_MS = 10 * 60 * 1000;
 
-/** Песента, която играчът е избрал: първо от базата, иначе от Deezer. */
-async function resolveGuess(deezerId: string): Promise<{ title: string; artist: string }> {
+/** Песента, която играчът е избрал: първо от базата, иначе от Deezer. match — за проверката, shown — за показване. */
+async function resolveGuess(deezerId: string): Promise<{ match: { title: string; artist: string }; shown: { title: string; artist: string } }> {
   const local = await prisma.track.findUnique({ where: { deezerId } });
-  if (local) return { title: local.title, artist: local.artistName };
+  if (local) return { match: { title: local.title, artist: local.artistName }, shown: { title: shownTitle(local), artist: shownArtist(local) } };
   const remote = await getTrack(deezerId).catch(() => {
     throw new GameError("Тази песен не е намерена — избери друга от списъка", 404);
   });
-  return { title: remote.title, artist: remote.artist.name };
+  const both = { title: remote.title, artist: remote.artist.name };
+  return { match: both, shown: both };
 }
 
 export async function playMove(sessionId: string, index: number, move: Move): Promise<GameView> {
@@ -265,8 +267,8 @@ export async function playMove(sessionId: string, index: number, move: Move): Pr
     next = { step, kind: "skip" };
   } else {
     const chosen = await resolveGuess(move.deezerId);
-    const correct = isSameSong(chosen, { title: round.track.title, artist: round.track.artistName });
-    next = { step, kind: "guess", deezerId: move.deezerId, ...chosen, correct };
+    const correct = isSameSong(chosen.match, { title: round.track.title, artist: round.track.artistName });
+    next = { step, kind: "guess", deezerId: move.deezerId, ...chosen.shown, correct };
   }
 
   const all = [...guesses, next];

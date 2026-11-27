@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { getViewer } from "@/lib/auth/viewer";
+import { shownArtist, shownTitle } from "@/lib/catalog/display";
 import { Suspense } from "react";
 import { connection } from "next/server";
 import { QUIZZES, QUIZ_TYPES } from "@/lib/engine/types";
@@ -172,7 +173,7 @@ async function NewSongs() {
     where: { isActive: true, releaseYear: { gte: new Date().getUTCFullYear() - 1 } },
     orderBy: [{ releaseDate: "desc" }, { createdAt: "desc" }],
     take: 6,
-    select: { id: true, title: true, artistName: true, albumCover: true, releaseDate: true },
+    select: { id: true, title: true, displayTitle: true, artistName: true, displayArtist: true, albumCover: true, releaseDate: true },
   });
   return (
     <section className="card space-y-3 p-4">
@@ -190,8 +191,8 @@ async function NewSongs() {
                 <span className="h-10 w-10 rounded-md bg-surface-strong" />
               )}
               <span className="min-w-0 flex-1">
-                <span className="block truncate text-sm font-semibold">{t.title}</span>
-                <span className="block truncate text-xs text-muted">{t.artistName}</span>
+                <span className="block truncate text-sm font-semibold">{shownTitle(t)}</span>
+                <span className="block truncate text-xs text-muted">{shownArtist(t)}</span>
               </span>
               {t.releaseDate && (
                 <span className="text-xs text-muted">{t.releaseDate.toLocaleDateString("bg-BG", { day: "numeric", month: "short" })}</span>
