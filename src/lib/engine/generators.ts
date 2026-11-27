@@ -3,6 +3,7 @@ import "server-only";
 // по is_active) и генератор на случайни числа (детерминиран за дневното).
 
 import { cleanTitle, looseKey, songKey } from "@/lib/normalize";
+import { titlesLookBulgarian } from "@/lib/sync/filters";
 import { formatViews } from "@/lib/youtube-match";
 import type { Album, Artist, Track, TrackArtist } from "@/generated/prisma/client";
 import { STREAK_MAX } from "./scoring";
@@ -295,15 +296,53 @@ function orderRounds(pool: PoolTrack[], random: Random): RoundSpec[] {
   return need(rounds, QUIZZES.order.length as number, "песни");
 }
 
+/** Компилации, концерти, луксозни/архивни издания, „хитовете на“ — не са „албумът на песента“. */
+const NOT_STUDIO_ALBUM =
+  /\b(live|unplugged|concert|deluxe|archives?|best|greatest|hits|hitove(te)?|zlatni(te)?|collection|anthology|essential|gold|platinum|the very|remaster(ed)?|anniversary|compilation|mix(es)?|remix(es)?|karaoke|instrumentals?|edition|tribute|tour|vol(ume)?|duets?|bonus|payner|planeta|folk \d{4})\b|на живо|концерт|архив|хитове|хитовете|най-доброто|най доброто|най-добрите|най добрите|избрано|колекция|златни|ремикс|юбилей|дуети|бонус|пайнер|планета|фолк \d{4}|ч\. ?\d|част \d|лучшие|сборник|години на сцената|godini na stsenata|\?\?\?/iu;
+
 function albumRounds(pool: PoolTrack[], random: Random): RoundSpec[] {
-  const real = (a: Album | null): a is Album => !!a && (a.recordType === "album" || a.recordType === "ep");
-  const songs = uniqueSongs(pool).filter((t) => t.artistId && real(t.album));
+  // Артисти на всеки албум (в пула) — албум с много артисти е сборен.
+  const albumArtists = new Map<string, Set<string>>();
+  const albumTitles = new Map<string, string[]>();
+  const albumBgIsrc = new Set<string>();
+  for (const t of pool) {
+    if (!t.albumId || !t.artistId) continue;
+    const set = albumArtists.get(t.albumId) ?? new Set<string>();
+    set.add(t.artistId);
+    albumArtists.set(t.albumId, set);
+    albumTitles.set(t.albumId, [...(albumTitles.get(t.albumId) ?? []), t.title]);
+    if (t.isrc?.toUpperCase().startsWith("BG")) albumBgIsrc.add(t.albumId);
+  }
+  const valid = (t: PoolTrack): boolean => {
+    const a = t.album;
+    if (!a || !t.artistId) return false;
+    if (a.recordType !== "album" && a.recordType !== "ep") return false;
+    if (a.artistId && a.artistId !== t.artistId) return false;
+    if ((albumArtists.get(a.id)?.size ?? 0) >= 3) return false;
+    if (NOT_STUDIO_ALBUM.test(a.title)) return false;
+    // Профилите в Deezer понякога смесват чужд изпълнител със същото име — при поп-фолка
+    // албумът трябва да има български ISRC или български заглавия.
+    if (t.artist?.isPopFolk && !albumBgIsrc.has(a.id) && !titlesLookBulgarian(albumTitles.get(a.id) ?? [])) return false;
+    return true;
+  };
+
+  // Валидните албуми на всяка песен (всички версии) и на всеки артист (без повтарящи се заглавия).
+  const songAlbums = new Map<string, Map<string, PoolTrack>>();
   const albumsByArtist = new Map<string, Album[]>();
-  for (const t of songs) {
+  for (const t of pool) {
+    if (!valid(t)) continue;
+    const album = t.album as Album;
+    const albumKey = looseKey(album.title);
+    const key = songKey(t.title, t.artistName);
+    const forSong = songAlbums.get(key) ?? new Map<string, PoolTrack>();
+    if (!forSong.has(albumKey)) forSong.set(albumKey, t);
+    songAlbums.set(key, forSong);
     const list = albumsByArtist.get(t.artistId as string) ?? [];
-    if (!list.some((a) => a.id === t.album?.id || looseKey(a.title) === looseKey(t.album?.title ?? ""))) list.push(t.album as Album);
+    if (!list.some((a) => a.id === album.id || looseKey(a.title) === albumKey)) list.push(album);
     albumsByArtist.set(t.artistId as string, list);
   }
+  // Само песни точно в един валиден албум — иначе има два верни отговора.
+  const songs = [...songAlbums.values()].filter((albums) => albums.size === 1).map((albums) => [...albums.values()][0]);
   const eligible = shuffle(
     songs.filter((t) => (albumsByArtist.get(t.artistId as string)?.length ?? 0) >= 4),
     random,
