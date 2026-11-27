@@ -5,7 +5,7 @@ import { prisma } from "@/lib/prisma";
 import {
   deleteArtistAction,
   deleteGenreAction,
-  deletePlaylistAction,
+  deletePlaylistAction, togglePlaylistOfficialAction,
   refreshArtistAction,
   setArtistGenresAction,
   togglePopFolkAction,
@@ -37,6 +37,14 @@ async function Dashboard() {
       include: { _count: { select: { tracks: true } } },
     }),
   ]);
+  const owners = new Map(
+    (
+      await prisma.profile.findMany({
+        where: { id: { in: playlists.map((p) => p.ownerId).filter((id): id is string => id !== null) } },
+        select: { id: true, username: true },
+      })
+    ).map((u) => [u.id, u.username]),
+  );
 
   return (
     <div className="space-y-10">
@@ -138,8 +146,20 @@ async function Dashboard() {
                 <p className="text-xs text-muted">
                   {p._count.tracks} песни · {p.source}
                   {p.category === "pop-folk" && " · секция Поп-фолк"}
+                  {p.ownerId
+                    ? ` · личен (${owners.get(p.ownerId) ?? "профил без име"})`
+                    : p.source === "curated" || p.category
+                      ? " · официален"
+                      : " · скрит (стар внос без собственик)"}
                 </p>
               </div>
+              {!p.ownerId && p.source !== "curated" && (
+                <form action={togglePlaylistOfficialAction.bind(null, p.id)}>
+                  <button type="submit" className={small}>
+                    {p.category ? "Скрий" : "Направи официален"}
+                  </button>
+                </form>
+              )}
               <Link href={`/admin/pleylisti/${p.id}`} className={small}>
                 Редактирай
               </Link>

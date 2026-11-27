@@ -167,7 +167,7 @@ model Playlist {
   updatedAt   DateTime        @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
   tracks      PlaylistTrack[]
 
-  @@unique([source, externalId])
+  @@unique([source, externalId, ownerId], map: "playlists_source_external_owner_key")
   @@map("playlists")
 }
 

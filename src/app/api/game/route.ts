@@ -2,6 +2,7 @@ import type { NextRequest } from "next/server";
 import { currentOwner } from "@/lib/auth/viewer";
 import { handle } from "@/lib/game/http";
 import { createGame, getGame } from "@/lib/game/server";
+import { assertSourceAccess } from "@/lib/game/playlists";
 import { createChallengeGame, isChallengeCode } from "@/lib/game/social";
 import { DEFAULT_SOURCE, parseSource } from "@/lib/game/source";
 import { clientIp, rateLimit, tooManyRequests } from "@/lib/rate-limit";
@@ -15,9 +16,9 @@ export async function POST(req: NextRequest) {
     const obj = typeof body === "object" && body !== null ? (body as Record<string, unknown>) : {};
     const challenge = typeof obj.challenge === "string" && isChallengeCode(obj.challenge) ? obj.challenge : null;
     const owner = await currentOwner();
-    const id = challenge
-      ? await createChallengeGame(challenge, owner)
-      : await createGame(parseSource(obj.source) ?? DEFAULT_SOURCE, owner);
+    const source = parseSource(obj.source) ?? DEFAULT_SOURCE;
+    if (!challenge) await assertSourceAccess(source, owner.userId ?? null);
+    const id = challenge ? await createChallengeGame(challenge, owner) : await createGame(source, owner);
     return Response.json({ game: await getGame(id) }, { status: 201 });
   });
 }

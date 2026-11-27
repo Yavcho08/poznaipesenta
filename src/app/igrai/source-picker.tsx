@@ -25,6 +25,8 @@ export interface PickerData {
     category: string | null;
     source: "curated" | "deezer" | "spotify";
     count: number;
+    /** Личен плейлист на текущия потребител */
+    mine: boolean;
   }[];
 }
 
@@ -134,13 +136,14 @@ function ArtistTile({ artist, selected, onClick, href }: { artist: PickerArtist;
   );
 }
 
-export function SourcePicker({ data }: { data: PickerData }) {
+export function SourcePicker({ data, loggedIn }: { data: PickerData; loggedIn: boolean }) {
   const [tab, setTab] = useState<Tab>("popfolk");
   const [filter, setFilter] = useState("");
   const [selected, setSelected] = useState<string[]>([]);
 
   const popFolkPlaylists = data.playlists.filter((p) => p.category === "pop-folk");
-  const otherPlaylists = data.playlists.filter((p) => p.category !== "pop-folk");
+  const officialPlaylists = data.playlists.filter((p) => !p.mine && p.category !== "pop-folk");
+  const myPlaylists = data.playlists.filter((p) => p.mine);
   const popFolkArtists = data.artists.filter((a) => a.isPopFolk).sort((a, b) => b.count - a.count);
 
   const visibleArtists = useMemo(() => {
@@ -253,22 +256,42 @@ export function SourcePicker({ data }: { data: PickerData }) {
       )}
 
       {tab === "playlists" && (
-        <div className="animate-rise space-y-3">
-          <Link href="/vnos" className="card flex items-center justify-center gap-2 border-dashed p-4 text-sm hover:bg-surface-strong">
-            ➕ Внеси плейлист от Deezer или Spotify
-          </Link>
-          <div className="grid gap-3 sm:grid-cols-2">
-            {otherPlaylists.map((p) => (
-              <SourceCard
-                key={p.id}
-                source={{ type: "playlist", id: p.id }}
-                title={p.name}
-                subtitle={p.source === "curated" ? p.description : p.source === "deezer" ? "от Deezer" : "от Spotify"}
-                count={p.count}
-              />
-            ))}
-          </div>
-          {otherPlaylists.length === 0 && <p className="text-center text-sm text-muted">Още няма внесени плейлисти.</p>}
+        <div className="animate-rise space-y-5">
+          {officialPlaylists.length > 0 && (
+            <section className="space-y-2">
+              <h2 className="text-sm font-semibold text-muted">Официални плейлисти</h2>
+              <div className="grid gap-3 sm:grid-cols-2">
+                {officialPlaylists.map((p) => (
+                  <SourceCard key={p.id} source={{ type: "playlist", id: p.id }} title={p.name} subtitle={p.description} count={p.count} />
+                ))}
+              </div>
+            </section>
+          )}
+          <section className="space-y-2">
+            <h2 className="text-sm font-semibold text-muted">Моите плейлисти · виждаш ги само ти (и стаите, които създаваш)</h2>
+            {loggedIn ? (
+              <>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  {myPlaylists.map((p) => (
+                    <SourceCard
+                      key={p.id}
+                      source={{ type: "playlist", id: p.id }}
+                      title={p.name}
+                      subtitle={p.source === "deezer" ? "от Deezer" : p.source === "spotify" ? "от Spotify" : p.description}
+                      count={p.count}
+                    />
+                  ))}
+                </div>
+                <Link href="/vnos" className="card flex items-center justify-center gap-2 border-dashed p-4 text-sm hover:bg-surface-strong">
+                  ➕ Внеси плейлист от Deezer или Spotify
+                </Link>
+              </>
+            ) : (
+              <Link href="/vhod?next=/vnos" className="card flex items-center justify-center gap-2 border-dashed p-4 text-sm hover:bg-surface-strong">
+                Влез, за да внасяш свои плейлисти от Deezer или Spotify
+              </Link>
+            )}
+          </section>
         </div>
       )}
     </div>

@@ -1,5 +1,7 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { Suspense } from "react";
+import { getViewer } from "@/lib/auth/viewer";
 import { spotifyConfigured, spotifyConnected } from "@/lib/import/spotify-api";
 import { ImportClient } from "./import-client";
 
@@ -18,6 +20,16 @@ export default function ImportPage({ searchParams }: PageProps<"/vnos">) {
 
 async function ImportWithState({ searchParams }: { searchParams: PageProps<"/vnos">["searchParams"] }) {
   const params = await searchParams;
+  if (!(await getViewer())) {
+    return (
+      <div className="card space-y-3 p-6 text-center">
+        <p>Внесените плейлисти са лични — виждаш ги само ти (и стаите, които създаваш). За това ти трябва профил.</p>
+        <Link href="/vhod?next=/vnos" className="btn-primary w-full">
+          Вход / Регистрация
+        </Link>
+      </div>
+    );
+  }
   const error = typeof params.spotifyError === "string" ? params.spotifyError : null;
   return (
     <ImportClient

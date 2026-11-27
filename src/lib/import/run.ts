@@ -41,7 +41,8 @@ export interface PreparedImport {
   total: number;
   /** Предупреждение за потребителя (напр. „само първите 100 песни“). */
   notice?: string;
-  run: (emit: (e: ImportEvent) => void) => Promise<void>;
+  /** ownerId — потребителят, който внася (плейлистът е личен за него). */
+  run: (emit: (e: ImportEvent) => void, ownerId: string) => Promise<void>;
 }
 
 async function resolveDeezerId(url: string): Promise<string> {
@@ -61,13 +62,13 @@ function label(t: SourceTrack): string {
 }
 
 async function save(
-  meta: { name: string; source: PlaylistSource; externalId: string; total: number },
+  meta: { name: string; source: PlaylistSource; externalId: string; total: number; ownerId: string },
   tracks: DeezerTrack[],
 ): Promise<string> {
   const playlist = await prisma.playlist.upsert({
-    where: { source_externalId: { source: meta.source, externalId: meta.externalId } },
+    where: { source_externalId_ownerId: { source: meta.source, externalId: meta.externalId, ownerId: meta.ownerId } },
     update: { name: meta.name, sourceTotal: meta.total },
-    create: { name: meta.name, source: meta.source, externalId: meta.externalId, sourceTotal: meta.total },
+    create: { name: meta.name, source: meta.source, externalId: meta.externalId, sourceTotal: meta.total, ownerId: meta.ownerId },
   });
 
   // Set пази реда на добавяне и маха повторенията (една песен два пъти в плейлиста).
@@ -130,9 +131,9 @@ function prepare(
     ...meta,
     total,
     notice,
-    run: async (emit) => {
+    run: async (emit, ownerId) => {
       const { found, missing } = await matchAll(sources, known, emit);
-      const playlistId = await save({ ...meta, total }, found);
+      const playlistId = await save({ ...meta, total, ownerId }, found);
       emit({ type: "done", playlistId, name: meta.name, ready: found.length, total, missing });
     },
   };

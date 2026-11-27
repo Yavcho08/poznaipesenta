@@ -1,4 +1,5 @@
 import type { NextRequest } from "next/server";
+import { getViewer } from "@/lib/auth/viewer";
 import { clientIp, rateLimit, tooManyRequests } from "@/lib/rate-limit";
 import { ImportError, parseImportRequest, prepareImport, type ImportEvent } from "@/lib/import/run";
 import { SpotifyApiError } from "@/lib/import/spotify-api";
@@ -11,6 +12,9 @@ export const maxDuration = 300;
 // Внос на плейлист. Отговорът е NDJSON поток: по един ImportEvent на ред (прогрес на живо).
 export async function POST(req: NextRequest) {
   if (!rateLimit(`import:${clientIp(req)}`, 10, 60_000)) return tooManyRequests();
+  // Внесеният плейлист е личен — трябва профил.
+  const viewer = await getViewer();
+  if (!viewer) return Response.json({ error: "Влез в профила си, за да внасяш плейлисти — те са лични." }, { status: 401 });
   const request = parseImportRequest(await req.json().catch(() => null));
   if (!request) return Response.json({ error: "Невалидна заявка" }, { status: 400 });
 
@@ -32,7 +36,7 @@ export async function POST(req: NextRequest) {
       const emit = (e: ImportEvent) => controller.enqueue(encoder.encode(`${JSON.stringify(e)}\n`));
       emit({ type: "start", name: prepared.name, total: prepared.total, notice: prepared.notice });
       try {
-        await prepared.run(emit);
+        await prepared.run(emit, viewer.userId);
       } catch (error) {
         console.error(error);
         emit({ type: "error", message: "Вносът прекъсна. Опитай пак." });

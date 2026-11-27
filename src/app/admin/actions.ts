@@ -133,6 +133,15 @@ export async function createPlaylistAction(_prev: ActionResult | null, form: For
   return { ok: true, message: `Плейлистът „${name}“ е създаден` };
 }
 
+/** Внесен плейлист без собственик → официален (вижда се от всички) или обратно. */
+export async function togglePlaylistOfficialAction(playlistId: string): Promise<void> {
+  await requireAdmin();
+  const playlist = await prisma.playlist.findUniqueOrThrow({ where: { id: playlistId } });
+  if (playlist.ownerId || playlist.source === "curated") return;
+  await prisma.playlist.update({ where: { id: playlistId }, data: { category: playlist.category ? null : "official" } });
+  refresh();
+}
+
 export async function deletePlaylistAction(playlistId: string): Promise<void> {
   await requireAdmin();
   await prisma.playlist.delete({ where: { id: playlistId } });

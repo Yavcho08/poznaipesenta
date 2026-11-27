@@ -1,6 +1,8 @@
 import Link from "next/link";
 import { Suspense } from "react";
 import { connection } from "next/server";
+import { getViewer } from "@/lib/auth/viewer";
+import { visiblePlaylists } from "@/lib/game/playlists";
 import { prisma } from "@/lib/prisma";
 import { SourcePicker, type PickerData } from "./source-picker";
 
@@ -45,7 +47,7 @@ function ModeCard({ href, icon, title, text }: { href: string; icon: string; tit
   );
 }
 
-async function loadPickerData(): Promise<PickerData> {
+async function loadPickerData(userId: string | null): Promise<PickerData> {
   const [popFolkCount, genres, artists, playlists] = await Promise.all([
     prisma.track.count({ where: { isActive: true, artist: { isPopFolk: true, isActive: true } } }),
     prisma.genre.findMany({
@@ -59,8 +61,9 @@ async function loadPickerData(): Promise<PickerData> {
       select: { id: true, name: true, imageUrl: true, isPopFolk: true, _count: { select: { tracks: { where: { isActive: true } } } } },
     }),
     prisma.playlist.findMany({
+      where: visiblePlaylists(userId),
       orderBy: [{ sortOrder: "asc" }, { createdAt: "desc" }],
-      select: { id: true, name: true, description: true, category: true, source: true, _count: { select: { tracks: true } } },
+      select: { id: true, name: true, description: true, category: true, source: true, ownerId: true, _count: { select: { tracks: true } } },
     }),
   ]);
 
@@ -82,11 +85,13 @@ async function loadPickerData(): Promise<PickerData> {
       category: p.category,
       source: p.source,
       count: p._count.tracks,
+      mine: p.ownerId !== null && p.ownerId === userId,
     })),
   };
 }
 
 async function Picker() {
   await connection();
-  return <SourcePicker data={await loadPickerData()} />;
+  const viewer = await getViewer();
+  return <SourcePicker data={await loadPickerData(viewer?.userId ?? null)} loggedIn={viewer !== null} />;
 }

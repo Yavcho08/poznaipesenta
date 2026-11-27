@@ -3,6 +3,7 @@ import type { Metadata } from "next";
 import { Suspense } from "react";
 import { connection } from "next/server";
 import { ROUNDS_PER_GAME } from "@/lib/game/rules";
+import { visiblePlaylists } from "@/lib/game/playlists";
 import { prisma } from "@/lib/prisma";
 import { RoomEntry, type SourceOption } from "./room-entry";
 
@@ -32,19 +33,24 @@ async function Entry() {
       include: { artists: { select: { artist: { select: { _count: { select: { tracks: { where: { isActive: true } } } } } } } } },
     }),
     prisma.playlist.findMany({
+      where: visiblePlaylists((await getViewer())?.userId ?? null),
       orderBy: [{ category: "asc" }, { sortOrder: "asc" }],
-      select: { id: true, name: true, _count: { select: { tracks: true } } },
+      select: { id: true, name: true, ownerId: true, _count: { select: { tracks: true } } },
     }),
   ]);
 
   const options: SourceOption[] = [
     { label: "Поп-фолк (всички)", source: { type: "popfolk" as const }, count: popFolk },
-    ...playlists.map((p) => ({ label: p.name, source: { type: "playlist" as const, id: p.id }, count: p._count.tracks })),
+    // Официалните плейлисти и жанровете най-отгоре, после моите плейлисти.
+    ...playlists.filter((p) => !p.ownerId).map((p) => ({ label: p.name, source: { type: "playlist" as const, id: p.id }, count: p._count.tracks })),
     ...genres.map((g) => ({
       label: `Жанр: ${g.name}`,
       source: { type: "genre" as const, slug: g.slug },
       count: g.artists.reduce((s, { artist }) => s + artist._count.tracks, 0),
     })),
+    ...playlists
+      .filter((p) => p.ownerId)
+      .map((p) => ({ label: `Моят плейлист: ${p.name}`, source: { type: "playlist" as const, id: p.id }, count: p._count.tracks })),
   ].filter((o) => o.count >= ROUNDS_PER_GAME);
 
   const viewer = await getViewer();
