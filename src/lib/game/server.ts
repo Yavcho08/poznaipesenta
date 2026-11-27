@@ -1,4 +1,5 @@
 import "server-only";
+import { normalizedScore } from "@/lib/game/score";
 import { prisma } from "@/lib/prisma";
 import { getPreviewUrl, getTrack } from "@/lib/deezer";
 import { findItunesPreview } from "@/lib/itunes";
@@ -285,10 +286,13 @@ export async function playMove(sessionId: string, index: number, move: Move): Pr
   });
 
   const view = await getGame(sessionId);
-  if (view.finished) await finishGame(sessionId, view.total);
+  if (view.finished) {
+    const score = normalizedScore("listen", view.total, view.rounds.length, view.rounds.filter((r) => r.solvedAtStep !== null).length);
+    await finishGame(sessionId, view.total, score);
+  }
   return view;
 }
 
-async function finishGame(sessionId: string, total: number): Promise<void> {
-  await prisma.game.updateMany({ where: { id: sessionId, finishedAt: null }, data: { finishedAt: new Date(), total } });
+async function finishGame(sessionId: string, total: number, score: number): Promise<void> {
+  await prisma.game.updateMany({ where: { id: sessionId, finishedAt: null }, data: { finishedAt: new Date(), total, score } });
 }

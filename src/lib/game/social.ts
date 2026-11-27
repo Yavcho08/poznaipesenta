@@ -236,3 +236,51 @@ export async function getArtistBoard(artistId: string, limit = 50): Promise<Arti
     LIMIT ${limit}`;
   return rows.map((r, i) => ({ ...r, rank: i + 1, accuracy: r.played ? Math.round((r.solved / r.played) * 100) : 0 }));
 }
+
+// --- Класация по нормализирани точки (games.score, до 1000 на игра) ---
+
+export type ScorePeriod = "week" | "month";
+
+export interface ScoreRow {
+  rank: number;
+  name: string;
+  score: number;
+  games: number;
+}
+
+/**
+ * gameType = null → „Всички игри“: сбор от точките на всички игри за периода.
+ * Иначе — най-добрата игра от този вид за периода.
+ */
+export async function getScoreBoard(options: { period: ScorePeriod; gameType: string | null }, limit = 50): Promise<ScoreRow[]> {
+  const since = new Date(Date.now() - (options.period === "month" ? MONTH_MS : WEEK_MS));
+  const groups = await prisma.game.groupBy({
+    by: ["userId"],
+    where: {
+      finishedAt: { gte: since },
+      score: { not: null },
+      userId: { not: null },
+      user: { username: { not: null } },
+      ...(options.gameType && { gameType: options.gameType }),
+    },
+    _sum: { score: true },
+    _max: { score: true },
+    _count: { _all: true },
+  });
+  const users = await prisma.profile.findMany({
+    where: { id: { in: groups.map((g) => g.userId).filter((id): id is string => id !== null) } },
+    select: { id: true, username: true },
+  });
+  const names = new Map(users.map((u) => [u.id, u.username]));
+  const rows = groups
+    .map((g) => ({
+      name: (g.userId && names.get(g.userId)) || "",
+      score: (options.gameType ? g._max.score : g._sum.score) ?? 0,
+      games: g._count._all,
+    }))
+    .filter((r) => r.name)
+    .sort((a, b) => b.score - a.score || a.games - b.games || a.name.localeCompare(b.name, "bg"));
+  const ranked: ScoreRow[] = [];
+  rows.forEach((r, i) => ranked.push({ ...r, rank: i > 0 && rows[i - 1].score === r.score ? ranked[i - 1].rank : i + 1 }));
+  return ranked.slice(0, limit);
+}

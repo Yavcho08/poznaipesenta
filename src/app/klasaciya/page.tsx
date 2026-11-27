@@ -6,19 +6,38 @@ import { connection } from "next/server";
 import { levelFromXp } from "@/lib/achievements/progress";
 import { formatDate, todayInSofia } from "@/lib/game/daily-shared";
 import type { RankedEntry } from "@/lib/game/leaderboard";
-import { getArtistBoard, getLeaderboard, getXpBoard, weeklySources, type Board } from "@/lib/game/social";
+import { QUIZ_TYPES, QUIZZES, type QuizType } from "@/lib/engine/types";
+import { getArtistBoard, getLeaderboard, getScoreBoard, getXpBoard, type ScorePeriod, type ScoreRow } from "@/lib/game/social";
 import { prisma } from "@/lib/prisma";
 
 export const metadata: Metadata = { title: "Класация · Познай песента" };
 
-const TABS = [
-  { key: "sedmica", label: "Седмица" },
-  { key: "mesec", label: "Месец" },
-  { key: "obshto", label: "Общо" },
-  { key: "dnevno", label: "Дневно" },
-  { key: "artist", label: "По артист" },
-  { key: "arhiv", label: "Архив" },
+const SHORT_TITLES: Record<QuizType, string> = {
+  cover: "Корица",
+  newer: "По-нова",
+  higher: "По-популярна",
+  year: "Година",
+  order: "Хронология",
+  album: "Албум",
+  singer: "Кой пее",
+  word: "Дума",
+};
+
+/** Табове по игри (нормализирани точки) — първият е по подразбиране. */
+const GAME_TABS = [
+  { key: "vsichki", label: "Всички игри", icon: "🎮", gameType: null },
+  { key: "listen", label: "Класическа", icon: "🎧", gameType: "listen" },
+  ...QUIZ_TYPES.map((t) => ({ key: t, label: SHORT_TITLES[t], icon: QUIZZES[t].icon, gameType: t })),
+] as const satisfies readonly { key: string; label: string; icon: string; gameType: string | null }[];
+
+const OTHER_TABS = [
+  { key: "dnevno", label: "📅 Дневно" },
+  { key: "obshto", label: "⭐ XP" },
+  { key: "artist", label: "🎤 По артист" },
+  { key: "arhiv", label: "🗄️ Архив" },
 ] as const;
+
+const TABS = [...GAME_TABS, ...OTHER_TABS];
 type Tab = (typeof TABS)[number]["key"];
 
 export default function LeaderboardPage({ searchParams }: PageProps<"/klasaciya">) {
@@ -101,22 +120,90 @@ function tabClass(active: boolean): string {
   }`;
 }
 
+function ScoreTable({ rows, empty }: { rows: ScoreRow[]; empty: string }) {
+  if (rows.length === 0) return <p className="card p-6 text-center text-sm text-muted">{empty}</p>;
+  return (
+    <ol className="card divide-y divide-line">
+      {rows.map((r) => (
+        <li key={r.name} className="flex items-center gap-3 px-4 py-2.5">
+          <Rank rank={r.rank} />
+          <PlayerName name={r.name} />
+          <span className="text-xs text-muted">
+            {r.games} {r.games === 1 ? "игра" : "игри"}
+          </span>
+          <span className="w-16 text-right font-display text-lg font-bold">{r.score.toLocaleString("bg-BG")}</span>
+        </li>
+      ))}
+    </ol>
+  );
+}
+
+// Стари адреси (?t=sedmica / ?t=mesec) → новите табове.
+function resolveTab(raw: unknown): Tab {
+  if (raw === "sedmica" || raw === "mesec") return "vsichki";
+  return TABS.some((t) => t.key === raw) ? (raw as Tab) : "vsichki";
+}
+
 async function Boards({ searchParams }: { searchParams: PageProps<"/klasaciya">["searchParams"] }) {
   await connection();
   const params = await searchParams;
-  const tab: Tab = TABS.some((t) => t.key === params.t) ? (params.t as Tab) : "sedmica";
-  const source = typeof params.s === "string" ? params.s : null;
+  const tab = resolveTab(params.t);
+  const period: ScorePeriod = params.p === "mesec" || params.t === "mesec" ? "month" : "week";
   const artist = typeof params.a === "string" ? params.a : null;
+  const gameTab = GAME_TABS.find((t) => t.key === tab);
+  const href = (t: string, p: ScorePeriod = period) => {
+    const q = new URLSearchParams();
+    if (t !== "vsichki") q.set("t", t);
+    if (p === "month" && GAME_TABS.some((g) => g.key === t)) q.set("p", "mesec");
+    const qs = q.toString();
+    return qs ? `/klasaciya?${qs}` : "/klasaciya";
+  };
 
   return (
     <div className="space-y-4">
-      <nav className="card -mx-1 flex gap-1 overflow-x-auto p-1">
-        {TABS.map((t) => (
-          <Link key={t.key} href={t.key === "sedmica" ? "/klasaciya" : `/klasaciya?t=${t.key}`} className={tabClass(tab === t.key)}>
+      <nav className="flex flex-wrap gap-1.5" aria-label="Игри">
+        {GAME_TABS.map((t) => (
+          <Link
+            key={t.key}
+            href={href(t.key)}
+            className={`rounded-full border px-3 py-1.5 text-xs font-semibold ${tab === t.key ? "border-transparent bg-gradient-to-r from-accent to-accent-2 text-white" : "border-line text-muted hover:text-foreground"}`}
+          >
+            {t.icon} {t.label}
+          </Link>
+        ))}
+      </nav>
+      <nav className="card flex flex-wrap justify-center gap-1 p-1" aria-label="Други класации">
+        {OTHER_TABS.map((t) => (
+          <Link key={t.key} href={href(t.key)} className={tabClass(tab === t.key)}>
             {t.label}
           </Link>
         ))}
       </nav>
+
+      {gameTab && (
+        <>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <p className="text-sm text-muted">
+              {gameTab.gameType === null
+                ? `Сбор от точките на всички игри за последните ${period === "month" ? "30" : "7"} дни.`
+                : `Най-добрата игра на всеки играч за последните ${period === "month" ? "30" : "7"} дни.`}{" "}
+              Всяка игра дава до 1000 точки.
+            </p>
+            <div className="flex gap-1 rounded-full border border-line p-0.5 text-xs">
+              <Link href={href(tab, "week")} className={`rounded-full px-3 py-1 ${period === "week" ? "bg-accent/30" : "text-muted"}`}>
+                Седмица
+              </Link>
+              <Link href={href(tab, "month")} className={`rounded-full px-3 py-1 ${period === "month" ? "bg-accent/30" : "text-muted"}`}>
+                Месец
+              </Link>
+            </div>
+          </div>
+          <ScoreTable
+            rows={await getScoreBoard({ period, gameType: gameTab.gameType }, 50)}
+            empty="Още няма резултати. Изиграй игра с профил!"
+          />
+        </>
+      )}
 
       {tab === "dnevno" && (
         <>
@@ -127,7 +214,6 @@ async function Boards({ searchParams }: { searchParams: PageProps<"/klasaciya">[
           </Link>
         </>
       )}
-      {(tab === "sedmica" || tab === "mesec") && <PeriodBoard kind={tab === "mesec" ? "month" : "week"} source={source} tab={tab} />}
       {tab === "obshto" && <XpBoard />}
       {tab === "artist" && <ArtistBoard artistId={artist} />}
       {tab === "arhiv" && (
@@ -137,32 +223,6 @@ async function Boards({ searchParams }: { searchParams: PageProps<"/klasaciya">[
         </>
       )}
     </div>
-  );
-}
-
-async function PeriodBoard({ kind, source, tab }: { kind: "week" | "month"; source: string | null; tab: string }) {
-  const board: Board = { kind, sourceRef: source };
-  const [sources, entries] = await Promise.all([weeklySources(), getLeaderboard(board, 50)]);
-  const base = tab === "sedmica" ? "/klasaciya?" : `/klasaciya?t=${tab}&`;
-  const chip = (active: boolean) =>
-    `whitespace-nowrap rounded-full border px-3 py-1.5 text-xs ${active ? "border-accent bg-accent/20 text-foreground" : "border-line text-muted"}`;
-  return (
-    <>
-      <p className="text-sm text-muted">Най-добрата игра „Познай песента“ на всеки играч за последните {kind === "month" ? "30" : "7"} дни.</p>
-      {sources.length > 0 && (
-        <div className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1">
-          <Link href={base.slice(0, -1)} className={chip(!source)}>
-            Всички
-          </Link>
-          {sources.map((s) => (
-            <Link key={s.sourceRef} href={`${base}s=${encodeURIComponent(s.sourceRef)}`} className={chip(source === s.sourceRef)}>
-              {s.label}
-            </Link>
-          ))}
-        </div>
-      )}
-      <Table entries={entries} empty="Още няма резултати. Изиграй игра с профил!" />
-    </>
   );
 }
 

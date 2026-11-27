@@ -232,6 +232,8 @@ model Game {
   sourceRef     String?     @map("source_ref")
   playerName    String?     @map("player_name")
   total         Int         @default(0)
+  // Нормализирани точки за класацията (до 1000 на игра) — src/lib/game/score.ts
+  score         Int?
   // „Предизвикай приятел“: код за линка (не самото id — иначе приятелят би видял отговорите).
   challengeCode String?     @unique @map("challenge_code")
   createdAt     DateTime    @default(now()) @map("created_at") @db.Timestamptz(6)
@@ -241,6 +243,7 @@ model Game {
   @@index([userId, finishedAt], map: "games_user_idx")
   @@index([guestId], map: "games_guest_idx")
   @@index([finishedAt], map: "games_finished_idx")
+  @@index([finishedAt(sort: Desc)], map: "games_score_week_idx")
   @@index([sourceType, sourceRef], map: "games_source_idx")
   @@map("games")
 }

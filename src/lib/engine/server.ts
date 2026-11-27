@@ -6,6 +6,7 @@ import { describeSource, GameError, poolWhere } from "@/lib/game/server";
 import { DEFAULT_SOURCE, parseSource, type GameSource } from "@/lib/game/source";
 import { prisma } from "@/lib/prisma";
 import { generateRounds, NotEnoughData, type RoundSpec } from "./generators";
+import { normalizedScore } from "@/lib/game/score";
 import { evaluate, inputFits, isQuizFinished } from "./scoring";
 import { QUIZZES, type Attempt, type QuizInput, type QuizRoundView, type QuizType, type QuizView, type StoredQuestion } from "./types";
 
@@ -234,7 +235,8 @@ export async function answerQuiz(id: string, index: number, input: QuizInput, el
   const updated = await loadQuiz(id);
   const view = toView(updated, await quizLabel(updated));
   if (view.finished && !updated.finishedAt) {
-    await prisma.game.updateMany({ where: { id, finishedAt: null }, data: { finishedAt: new Date(), total: view.total } });
+    const score = normalizedScore(type, view.total, view.rounds.length, view.rounds.filter((r) => r.correct).length);
+    await prisma.game.updateMany({ where: { id, finishedAt: null }, data: { finishedAt: new Date(), total: view.total, score } });
   }
   return { quiz: view, correct: result.correct, points: result.points };
 }

@@ -4,7 +4,7 @@ import { Suspense } from "react";
 import { connection } from "next/server";
 import { QUIZZES, QUIZ_TYPES } from "@/lib/engine/types";
 import { todayInSofia } from "@/lib/game/daily-shared";
-import { getLeaderboard } from "@/lib/game/social";
+import { getScoreBoard } from "@/lib/game/social";
 import { prisma } from "@/lib/prisma";
 import { Countdown } from "./countdown";
 
@@ -123,7 +123,7 @@ const MEDALS = ["🥇", "🥈", "🥉"];
 
 async function TopWeek() {
   await connection();
-  const [top, viewer] = await Promise.all([getLeaderboard({ kind: "week", sourceRef: null }, 5), getViewer()]);
+  const [top, viewer] = await Promise.all([getScoreBoard({ period: "week", gameType: null }, 5), getViewer()]);
   return (
     <section className="card space-y-3 p-4">
       <div className="flex items-end justify-between">
@@ -157,7 +157,7 @@ async function TopWeek() {
             <li key={e.name} className="flex items-center gap-3 py-2">
               <span className="w-7 text-center">{MEDALS[e.rank - 1] ?? <span className="text-sm text-muted">{e.rank}</span>}</span>
               <span className="min-w-0 flex-1 truncate font-semibold">{e.name}</span>
-              <span className="font-display font-bold">{e.total}</span>
+              <span className="font-display font-bold">{e.score.toLocaleString("bg-BG")}</span>
             </li>
           ))}
         </ol>
