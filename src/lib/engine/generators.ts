@@ -3,7 +3,7 @@ import "server-only";
 // по is_active) и генератор на случайни числа (детерминиран за дневното).
 
 import { cleanTitle, looseKey, songKey } from "@/lib/normalize";
-import { titlesLookBulgarian } from "@/lib/sync/filters";
+import { nonBulgarianCyrillic, titlesLookBulgarian } from "@/lib/sync/filters";
 import { formatViews } from "@/lib/youtube-match";
 import type { Album, Artist, Track, TrackArtist } from "@/generated/prisma/client";
 import { STREAK_MAX } from "./scoring";
@@ -451,31 +451,67 @@ function titleWords(title: string): string[] {
     .filter(Boolean);
 }
 
+const ENGLISH = new Set(
+  "the you me my your i im love baby girl boy night day time heart life money party dance one all be is are and of to in on with for no yes not why what when bad good king queen hot sexy crazy fire dream world body feel like just let go come back up down away tonight forever never again only single mashup drink dream sexy lady mister miss super star stop show boss money rich gangster style hello sorry kiss angel diva lady happy sad remix intro outro bonus mega".split(" "),
+);
+
+// Буквосъчетания, които ги няма в български на латиница (там „ц“ е „ts“, „ъ“ е „a“ и т.н.).
+const ENGLISH_LETTERS = /w|q|x|th|ee|oo|ea|ou|ck|ph|igh|c(?!h)/i;
+
+/** Език на дума: кирилица / английски / български на латиница. */
+function wordLang(word: string): "cyr" | "en" | "lat" {
+  if (/\p{Script=Cyrillic}/u.test(word)) return "cyr";
+  return ENGLISH.has(word.toLowerCase()) || ENGLISH_LETTERS.test(word) ? "en" : "lat";
+}
+
+/** Само букви (без „2016“, „Gps-a“), поне 3. */
+const usableWord = (w: string) => w.length >= 3 && /^\p{L}+$/u.test(w) && !STOP_WORDS.has(looseKey(w)) && !nonBulgarianCyrillic(w);
+
+/** Същият стил на главните букви като отговора (иначе изпъква). */
+function matchCase(word: string, like: string): string {
+  if (like.length > 1 && like === like.toLocaleUpperCase("bg")) return word.toLocaleUpperCase("bg");
+  const lower = word.toLocaleLowerCase("bg");
+  return like[0] === like[0].toLocaleUpperCase("bg") ? lower[0].toLocaleUpperCase("bg") + lower.slice(1) : lower;
+}
+
+/** Една и съща празнина за всяка дума — дължината не подсказва. */
+export const WORD_GAP = "＿＿＿";
+
 function wordRounds(pool: PoolTrack[], random: Random): RoundSpec[] {
   const songs = shuffle(uniqueSongs(pool), random);
-  const allWords = [
-    ...new Map(
-      songs.flatMap((t) => titleWords(t.title)).filter((w) => w.length >= 3 && !STOP_WORDS.has(looseKey(w))).map((w) => [looseKey(w), w]),
-    ).values(),
-  ];
+  // Думи от всички заглавия, по език (за грешните отговори).
+  const wordsByLang = new Map<string, Map<string, string>>();
+  for (const t of songs) {
+    for (const w of titleWords(t.title)) {
+      if (!usableWord(w)) continue;
+      const lang = wordLang(w);
+      const map = wordsByLang.get(lang) ?? new Map<string, string>();
+      map.set(looseKey(w), w);
+      wordsByLang.set(lang, map);
+    }
+  }
   const rounds: RoundSpec[] = [];
   for (const t of songs) {
     if (rounds.length >= (QUIZZES.word.length as number)) break;
     const words = titleWords(t.title);
     if (words.length < 2) continue;
-    const candidates = words.filter((w) => w.length >= 3 && !STOP_WORDS.has(looseKey(w)));
+    const candidates = words.filter(usableWord);
     if (candidates.length === 0) continue;
     const word = pick(candidates, random);
-    const cyr = /\p{Script=Cyrillic}/u.test(word);
-    const decoys = shuffle(
-      allWords.filter(
-        (w) => looseKey(w) !== looseKey(word) && /\p{Script=Cyrillic}/u.test(w) === cyr && Math.abs(w.length - word.length) <= 2,
-      ),
-      random,
-    ).slice(0, 3);
+    // Думата се повтаря в заглавието („Проба, проба“) → отговорът се вижда.
+    if (words.filter((w) => looseKey(w) === looseKey(word)).length > 1) continue;
+    const inTitle = new Set(words.map(looseKey));
+    const tolerance = word.length >= 8 ? 2 : 1;
+    const seen = new Set<string>();
+    const decoys = shuffle([...(wordsByLang.get(wordLang(word))?.values() ?? [])], random)
+      .filter((w) => !inTitle.has(looseKey(w)) && Math.abs(w.length - word.length) <= tolerance)
+      .map((w) => matchCase(w, word))
+      .filter((w) => (seen.has(w) ? false : (seen.add(w), true)))
+      .slice(0, 3);
     if (decoys.length < 3) continue;
     const display = cleanTitle(t.title) || t.title;
-    const masked = display.replace(new RegExp(`(^|[^\\p{L}\\d])${word.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?=$|[^\\p{L}\\d])`, "u"), `$1${"＿".repeat(Math.min(word.length, 8))}`);
+    const escaped = word.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const masked = display.replace(new RegExp(`(^|[^\\p{L}\\d])${escaped}(?=$|[^\\p{L}\\d])`, "u"), `$1${WORD_GAP}`);
     if (masked === display) continue;
     const options = shuffle([word, ...decoys], random).map((label, i) => ({ id: `o${i}`, label }));
     rounds.push({
