@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { getViewer } from "@/lib/auth/viewer";
 import { Suspense } from "react";
 import { connection } from "next/server";
 import { QUIZZES, QUIZ_TYPES } from "@/lib/engine/types";
@@ -122,7 +123,7 @@ const MEDALS = ["🥇", "🥈", "🥉"];
 
 async function TopWeek() {
   await connection();
-  const top = await getLeaderboard({ kind: "week", sourceRef: null }, 5);
+  const [top, viewer] = await Promise.all([getLeaderboard({ kind: "week", sourceRef: null }, 5), getViewer()]);
   return (
     <section className="card space-y-3 p-4">
       <div className="flex items-end justify-between">
@@ -134,10 +135,21 @@ async function TopWeek() {
       {top.length === 0 ? (
         <p className="py-6 text-center text-sm text-muted">
           Още няма резултати тази седмица.{" "}
-          <Link href="/vhod" className="underline">
-            Влез
-          </Link>{" "}
-          и бъди първи!
+          {viewer ? (
+            <>
+              <Link href="/igrai" className="underline">
+                Играй
+              </Link>{" "}
+              и бъди първи!
+            </>
+          ) : (
+            <>
+              <Link href="/vhod" className="underline">
+                Влез
+              </Link>{" "}
+              и бъди първи!
+            </>
+          )}
         </p>
       ) : (
         <ol className="divide-y divide-line">

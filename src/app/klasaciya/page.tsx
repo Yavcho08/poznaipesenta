@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { getViewer } from "@/lib/auth/viewer";
 import { Suspense } from "react";
 import { connection } from "next/server";
 import { levelFromXp } from "@/lib/achievements/progress";
@@ -25,18 +26,42 @@ export default function LeaderboardPage({ searchParams }: PageProps<"/klasaciya"
     <div className="space-y-6">
       <div>
         <h1 className="font-display text-2xl font-bold">🏆 Класация</h1>
-        <p className="text-sm text-muted">
-          Участват играчите с профил и име.{" "}
-          <Link href="/vhod?next=/klasaciya" className="underline">
-            Влез
-          </Link>
-          , за да се класираш.
-        </p>
+        <Suspense fallback={<p className="text-sm text-muted">Участват играчите с профил и име.</p>}>
+          <JoinHint />
+        </Suspense>
       </div>
       <Suspense fallback={<p className="text-muted">Зареждане…</p>}>
         <Boards searchParams={searchParams} />
       </Suspense>
     </div>
+  );
+}
+
+/** Подсказка според това кой гледа: гост → вход; без име → избери име; иначе — нищо за вход. */
+async function JoinHint() {
+  const viewer = await getViewer();
+  if (viewer?.profile.username) {
+    return <p className="text-sm text-muted">Участват играчите с профил и име. Ти играеш като <strong>{viewer.profile.username}</strong>.</p>;
+  }
+  return (
+    <p className="text-sm text-muted">
+      Участват играчите с профил и име.{" "}
+      {viewer ? (
+        <>
+          <Link href="/profil" className="underline">
+            Избери си име
+          </Link>
+          , за да се класираш.
+        </>
+      ) : (
+        <>
+          <Link href="/vhod?next=/klasaciya" className="underline">
+            Влез
+          </Link>
+          , за да се класираш.
+        </>
+      )}
+    </p>
   );
 }
 
