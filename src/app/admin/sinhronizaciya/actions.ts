@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { Prisma } from "@/generated/prisma/client";
 import { requireAdmin } from "@/lib/admin-auth";
 import { prisma } from "@/lib/prisma";
+import { recomputeAllYears } from "@/lib/catalog/years-recompute";
 import { runSync } from "@/lib/sync/run";
 
 export interface SyncActionState {
@@ -15,12 +16,13 @@ const PAGE = "/admin/sinhronizaciya";
 
 export async function runSyncAction(): Promise<SyncActionState> {
   await requireAdmin();
-  const s = await runSync({ trigger: "manual", budgetMs: 45_000 });
+  const s = await runSync({ trigger: "manual", budgetMs: 40_000 });
+  const years = await recomputeAllYears();
   revalidatePath(PAGE);
   const rest = s.remaining > 0 ? ` Остават ${s.remaining} артиста — пусни пак, за да продължи.` : "";
   return {
     ok: s.status !== "error",
-    message: `Обработени артисти: ${s.artistsProcessed}, нови песни: ${s.newTracks}, обновени: ${s.updatedTracks}, грешки: ${s.errors.length}.${rest}`,
+    message: `Обработени артисти: ${s.artistsProcessed}, нови песни: ${s.newTracks}, обновени: ${s.updatedTracks}, грешки: ${s.errors.length}. Поправени години: ${years.changedTracks} песни, ${years.changedAlbums} албума.${rest}`,
   };
 }
 

@@ -68,7 +68,7 @@ function songNotes(t: PoolTrack, skip: { album?: boolean; year?: boolean } = {})
     const kind = t.album.recordType ? RECORD_TYPE[t.album.recordType] : null;
     notes.push(`💿 ${kind && kind !== "сингъл" ? `${kind} ` : ""}„${t.album.title}“${kind === "сингъл" ? " (сингъл)" : ""}`);
   }
-  if (!skip.year && t.releaseYear) notes.push(`📅 ${t.releaseYear}`);
+  if (!skip.year && t.releaseYear && t.yearReliable) notes.push(`📅 ${t.releaseYear}`);
   if (t.duration) notes.push(`⏱ ${mmss(t.duration)}`);
   const feat = t.artists.filter((a) => a.role === "featured").map((a) => a.name);
   if (feat.length) notes.push(`🎤 с ${feat.join(", ")}`);
@@ -99,7 +99,11 @@ function need<T>(items: T[], count: number, what: string): T[] {
   return items.slice(0, count);
 }
 
-const yearOf = (d: Date | null): number | null => (d ? d.getUTCFullYear() : null);
+/** Година на албума: най-ранната на песните му (датата в Deezer често е на преиздаване). */
+const albumYear = (a: Album): number | null => a.releaseYear ?? (a.releaseDate ? a.releaseDate.getUTCFullYear() : null);
+
+/** Песен с надеждна година (най-ранното издание, потвърдено от ISRC) — само те влизат в игрите с години. */
+const hasYear = (t: PoolTrack): t is PoolTrack & { releaseYear: number } => t.yearReliable && t.releaseYear !== null;
 
 // --- Игрите ---
 
@@ -152,7 +156,7 @@ function coverRounds(pool: PoolTrack[], random: Random): RoundSpec[] {
           cover: target.album.coverUrl,
           notes: [
             target.album.recordType ? `💿 ${RECORD_TYPE[target.album.recordType] ?? target.album.recordType}` : null,
-            yearOf(target.album.releaseDate) ? `📅 ${yearOf(target.album.releaseDate)}` : null,
+            albumYear(target.album) ? `📅 ${albumYear(target.album)}` : null,
           ].filter((n): n is string => n !== null),
         },
       },
@@ -179,7 +183,7 @@ function pairRounds(metric: PairMetric, pool: PoolTrack[], random: Random): Roun
   const type = metric === "year" ? "newer" : "higher";
   const value = (t: PoolTrack) => (metric === "year" ? (t.releaseYear ?? 0) : metric === "youtube" ? (t.youtubeViews ?? 0) : t.rank);
   const songs = shuffle(
-    uniqueSongs(pool).filter((t) => (metric === "year" ? t.releaseYear !== null : value(t) > 0)),
+    uniqueSongs(pool).filter((t) => (metric === "year" ? hasYear(t) : value(t) > 0)),
     random,
   );
   const clearlyDifferent = (a: PoolTrack, b: PoolTrack) =>
@@ -234,7 +238,7 @@ function pairRounds(metric: PairMetric, pool: PoolTrack[], random: Random): Roun
 function yearRounds(pool: PoolTrack[], random: Random): RoundSpec[] {
   const now = new Date().getUTCFullYear();
   const songs = need(
-    shuffle(uniqueSongs(pool).filter((t) => t.releaseYear !== null && t.releaseYear >= 1980), random),
+    shuffle(uniqueSongs(pool).filter((t) => hasYear(t) && t.releaseYear >= 1980), random),
     QUIZZES.year.length as number,
     "песни с известна година",
   );
@@ -252,7 +256,7 @@ function yearRounds(pool: PoolTrack[], random: Random): RoundSpec[] {
 
 function orderRounds(pool: PoolTrack[], random: Random): RoundSpec[] {
   const byArtist = groupBy(
-    uniqueSongs(pool).filter((t) => t.artistId && t.releaseYear !== null),
+    uniqueSongs(pool).filter((t) => t.artistId && hasYear(t)),
     (t) => t.artistId as string,
   );
   const candidates = [...byArtist.values()].filter((list) => new Set(list.map((t) => t.releaseYear)).size >= 5);
@@ -321,7 +325,7 @@ function albumRounds(pool: PoolTrack[], random: Random): RoundSpec[] {
       random,
     ).slice(0, 3);
     const shuffled = shuffle([album, ...others], random);
-    const options: Option[] = shuffled.map((a, i) => ({ id: `o${i}`, label: a.title, sub: yearOf(a.releaseDate)?.toString() }));
+    const options: Option[] = shuffled.map((a, i) => ({ id: `o${i}`, label: a.title, sub: albumYear(a)?.toString() }));
     const correctId = `o${shuffled.indexOf(album)}`;
     return {
       trackId: t.id,

@@ -71,6 +71,8 @@ model Album {
   title        String
   coverUrl     String?     @map("cover_url")
   releaseDate  DateTime?   @map("release_date") @db.Date
+  // Най-ранната година на песните в албума (releaseDate често е на преиздаването).
+  releaseYear  Int?        @map("release_year")
   recordType   String?     @map("record_type")
   dateVerified Boolean     @default(false) @map("date_verified")
   createdAt    DateTime    @default(now()) @map("created_at") @db.Timestamptz(6)
@@ -97,6 +99,8 @@ model Track {
   releaseDate       DateTime?       @map("release_date") @db.Date
   // Най-ранната известна година (албум, ISRC, други версии) — src/lib/catalog/year.ts
   releaseYear       Int?            @map("release_year")
+  // Поне едно издание има година от ISRC — само такива песни влизат в игрите с години.
+  yearReliable      Boolean         @default(false) @map("year_reliable")
   rank              Int             @default(0)
   duration          Int?
   // looseKey(title) + looseKey(artistName) — търсене без значение от азбуката.

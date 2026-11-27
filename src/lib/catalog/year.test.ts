@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { dateYear, earliestYear, isrcYear, parseDeezerDate } from "./year";
+import { computeYears, dateYear, earliestYear, isrcYear, parseDeezerDate } from "./year";
 
 const NOW = new Date("2026-11-25T12:00:00Z");
 
@@ -56,5 +56,33 @@ describe("parseDeezerDate", () => {
     expect(parseDeezerDate("0000-00-00")).toBeNull();
     expect(parseDeezerDate("вчера")).toBeNull();
     expect(parseDeezerDate(undefined)).toBeNull();
+  });
+});
+
+describe("computeYears", () => {
+  const key = (title: string, artist: string) => `${title.toLowerCase()}|${artist.toLowerCase()}`;
+  const d = (s: string) => new Date(`${s}T00:00:00Z`);
+  const base = { albumId: null, albumDate: null, releaseDate: null, isrc: null };
+  it("най-ранната година между изданията (по ISRC и по заглавие), албумът — най-ранната на песните", () => {
+    const r = computeYears(
+      [
+        { ...base, id: "a", title: "Нещо горещо", artistName: "Камелия", isrc: "BGA410201116", albumId: "re", albumDate: d("2026-03-26") },
+        { ...base, id: "b", title: "Друга", artistName: "Камелия", isrc: "BGA410201117", albumId: "re", albumDate: d("2026-03-26") },
+        // Същото ISRC в компилация с друго изписване на заглавието
+        { ...base, id: "c", title: "Neshto goreshto", artistName: "Kamelia", isrc: "BGA410201116", albumDate: d("2019-01-01") },
+        // Същото заглавие без ISRC
+        { ...base, id: "d", title: "Нещо горещо", artistName: "Камелия", albumDate: d("2010-05-05") },
+      ],
+      key,
+      NOW,
+    );
+    expect(r.tracks.get("a")).toEqual({ year: 2002, reliable: true });
+    expect(r.tracks.get("c")).toEqual({ year: 2002, reliable: true });
+    expect(r.tracks.get("d")).toEqual({ year: 2002, reliable: true });
+    expect(r.albums.get("re")).toBe(2002);
+  });
+  it("само дата от Deezer (без ISRC) не е надеждна", () => {
+    const r = computeYears([{ ...base, id: "x", title: "X", artistName: "Y", albumDate: d("2026-01-01") }], key, NOW);
+    expect(r.tracks.get("x")).toEqual({ year: 2026, reliable: false });
   });
 });
